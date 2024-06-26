@@ -25,7 +25,7 @@ def data_values(df):
     return data_values
 
 @st.cache_data
-def dhis2_call(item_type, search_items, dhis2_username, dhis2_password, DHIS2_Test_Server_URL):
+def dhis2_all_UIDs(item_type, search_items, dhis2_username, dhis2_password, DHIS2_Test_Server_URL):
     """Wrapper for caching DHIS2 calls.
 
     Args:
@@ -36,12 +36,14 @@ def dhis2_call(item_type, search_items, dhis2_username, dhis2_password, DHIS2_Te
         DHIS2_Test_Server_URL (String): URL for DHIS2 server
 
     Returns:
-        String: DHIS2 ID
+        List: List of tuples of DHIS2 (name, ID) items
     """
-    return dhis2.getUID(item_type, search_items, dhis2_username, dhis2_password, DHIS2_Test_Server_URL)
+    if search_items == "" or search_items is None:
+        return []
+    else:
+        return dhis2.getAllUIDs(item_type, search_items, dhis2_username, dhis2_password, DHIS2_Test_Server_URL)
             
 # @st.cache_data
-# Ideally this would cache data but it messes with filling in info
 def convert_df(dfs):
     """ Creates a JSON payload through the form inputs and, if not empty,
     calling the getUID command to find the proper ID.
@@ -54,7 +56,7 @@ def convert_df(dfs):
     if data_set == "":
         data_set_id = ""
     else:
-        data_set_id = dhis2_call("dataSets", data_set, **st.secrets.dhis2_credentials)
+        data_set_id = dict(data_set_options)[data_set_dropdown]
     json_export["dataSet"] = f"{data_set_id}"
     
     json_export["period"] = f"{period_start}P7D"
@@ -62,7 +64,7 @@ def convert_df(dfs):
     if org_unit == "":
         org_unit_id = ""
     else:
-        org_unit_id = dhis2_call("organisationUnits", org_unit, **st.secrets.dhis2_credentials)
+        org_unit_id = dict(org_unit_options)[org_unit_dropdown]
         
     json_export["orgUnit"] = f"{org_unit_id}"
     
@@ -96,8 +98,20 @@ if len(tally_sheet) > 0:
         form_types,
         index=None
     )
-    data_set = st.text_input("Data Set:")
     org_unit = st.text_input("Organization Unit:")
+    org_unit_options = dhis2_all_UIDs("organisationUnits", org_unit, **st.secrets.dhis2_credentials)
+    org_unit_dropdown = st.selectbox(
+        "Searched Organizations",
+        [id[0] for id in org_unit_options],
+        index=None
+    )
+    data_set = st.text_input("Data Set:")
+    data_set_options = dhis2_all_UIDs("dataSets", data_set, **st.secrets.dhis2_credentials)
+    data_set_dropdown = st.selectbox(
+        "Searched Datasets",
+        [id[0] for id in data_set_options],
+        index=None
+    )
     period_start = st.date_input("Period Start Date:", format="YYYY-MM-DD")
     period_end = st.date_input("Period End Date:", format="YYYY-MM-DD")
 
