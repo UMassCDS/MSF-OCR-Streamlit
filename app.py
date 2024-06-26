@@ -12,13 +12,13 @@ form_types = ("ICCM", "OPD", "RHGynobs", "Vaccination")
 
 
 # Function definitions!
-# """ Creates a list of dataValues by going through each cell
-# and recording the column, header, and cell value of non-None
-
-# :param df: an iterable of data frames
-# :return: a list of JSON-ready dataValues
-# """
 def data_values(dfs):
+    """ Creates a list of dataValues by going through each cell
+    and recording the column, header, and cell value of non-None
+
+    :param dfs: an iterable of data frames
+    :return: a list of JSON-ready dataValues
+    """
     data_values = []
     for df in dfs:
         columns = df.columns.tolist()
@@ -31,13 +31,13 @@ def data_values(dfs):
             
 # @st.cache_data
 # Ideally this would cache data but it messes with filling in info
-# """ Creates a JSON payload through the form inputs and, if not empty,
-# calling the getUID command to find the proper ID.
-
-# :param df: an iterable of data frames
-# :return: the JSON payload
-# """
 def convert_df(dfs):
+    """ Creates a JSON payload through the form inputs and, if not empty,
+    calling the getUID command to find the proper ID.
+
+    :param df: an iterable of data frames
+    :return: the JSON payload
+    """
     json_export = {}
     
     if data_set == "":
