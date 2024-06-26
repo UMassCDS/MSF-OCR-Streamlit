@@ -5,29 +5,40 @@ import data_upload_DHIS2 as dhis2
 
 # Initializing variables
 form_types = ("ICCM", "OPD", "RHGynobs", "Vaccination")
-# Ideally, these could be set in this app?
-# dhis2_username = ''
-# dhis2_password = ''
-# DHIS2_Test_Server_URL = ''
-
 
 # Function definitions!
-def data_values(dfs):
+@st.cache_data
+def data_values(df):
     """ Creates a list of dataValues by going through each cell
     and recording the column, header, and cell value of non-None
 
-    :param dfs: an iterable of data frames
+    :param df: a data frame
     :return: a list of JSON-ready dataValues
     """
     data_values = []
-    for df in dfs:
-        columns = df.columns.tolist()
-        for col, i in df.iterrows():
-            for cell in columns:
-                if i[cell] is not None:
-                    new_cell = {"dataElement": f"{col}/{cell}", "value": f"{i[cell]}"}
-                    data_values.append(new_cell)
+    columns = df.columns.tolist()
+    for col, i in df.iterrows():
+        for cell in columns:
+            if i[cell] is not None:
+                new_cell = {"dataElement": f"{col}/{cell}", "value": f"{i[cell]}"}
+                data_values.append(new_cell)
     return data_values
+
+@st.cache_data
+def dhis2_call(item_type, search_items, dhis2_username, dhis2_password, DHIS2_Test_Server_URL):
+    """Wrapper for caching DHIS2 calls.
+
+    Args:
+        item_type (String): The type where we're looking
+        search_items (String): The name of the object whose ID we're looking for
+        dhis2_username (String): Username for DHIS2 login
+        dhis2_password (String): Password for DHIS2 login
+        DHIS2_Test_Server_URL (String): URL for DHIS2 server
+
+    Returns:
+        String: DHIS2 ID
+    """
+    return dhis2.getUID(item_type, search_items, dhis2_username, dhis2_password, DHIS2_Test_Server_URL)
             
 # @st.cache_data
 # Ideally this would cache data but it messes with filling in info
@@ -43,7 +54,7 @@ def convert_df(dfs):
     if data_set == "":
         data_set_id = ""
     else:
-        data_set_id = dhis2.getUID("dataSets", data_set)
+        data_set_id = dhis2_call("dataSets", data_set, **st.secrets.dhis2_credentials)
     json_export["dataSet"] = f"{data_set_id}"
     
     json_export["period"] = f"{period_start}P7D"
@@ -51,11 +62,14 @@ def convert_df(dfs):
     if org_unit == "":
         org_unit_id = ""
     else:
-        org_unit_id = dhis2.getUID("organisationUnits", org_unit)
+        org_unit_id = dhis2_call("organisationUnits", org_unit, **st.secrets.dhis2_credentials)
         
     json_export["orgUnit"] = f"{org_unit_id}"
     
-    json_export["dataValues"] = data_values(dfs.values())
+    data_values_list = []
+    for df in dfs.values():
+        data_values_list += data_values(df)
+    json_export["dataValues"] = data_values_list
     return json.dumps(json_export)
 
 

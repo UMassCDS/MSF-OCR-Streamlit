@@ -1,17 +1,12 @@
 import requests
 import json
 
-dhis2_username = ''
-dhis2_password = ''
-DHIS2_Test_Server_URL = 'https://ocr.twoca.org/'
-
-
 # Command to get all fields that are organisationUnits
 # TestServerURL/api/organisationUnits.json?fields=:all&includeChildren=true&paging=false
 
 # Get UIDS for dataSet, period, orgUnit
 # Known Words in dataSet
-def getUID(item_type, search_items):
+def getUID(item_type, search_items, dhis2_username, dhis2_password, DHIS2_Test_Server_URL):
     filter_param = 'filter=' + '&filter='.join([f'name:ilike:{term}' for term in search_items])
 
     url = f'{DHIS2_Test_Server_URL}/api/{item_type}?{filter_param}'
