@@ -1,17 +1,11 @@
 import streamlit as st
 import pandas as pd
 import json
-# import numpy as np
-# import io
-
-# from streamlit.elements.image import PILImage
-
-import data.data_upload_DHIS2 as dhis2
-from docTR.ocr_functions import (get_word_level_content, get_confidence_values,
-                           get_tabular_content, get_sheet_type, generate_key_value_pairs)
+import data_upload_DHIS2 as dhis2
+from msfocr.docTR import ocr_functions
 from doctr.io import DocumentFile
 from doctr.models import ocr_predictor
-from img2table.document import Image
+from img2table.document import Image as Image
 from img2table.ocr import DocTR
 
 # Initializing variables
@@ -64,11 +58,15 @@ def get_uploaded_images(tally_sheet):
 
 @st.cache_data
 def get_results(uploaded_images):
-    return [get_word_level_content(ocr_model, doc) for doc in uploaded_images]
+    return [ocr_functions.get_word_level_content(ocr_model, doc) for doc in uploaded_images]
 
 @st.cache_data
 def get_tabular_content_wrapper(_doctr_ocr, img, confidence_lookup_dict):
-    return get_tabular_content(_doctr_ocr, img, confidence_lookup_dict)
+    return ocr_functions.get_tabular_content(_doctr_ocr, img, confidence_lookup_dict)
+
+@st.cache_data
+def get_sheet_type_wrapper(_result):
+    return ocr_functions.get_sheet_type(_result)
 
 @st.cache_resource
 def create_ocr():
@@ -102,29 +100,52 @@ if len(tally_sheet) > 0:    # Will have prefilled data when OCR works
         st.session_state.upload_key += 1
         st.rerun()
         
-    form_type = st.selectbox(
-        "Which type of form is this?",
-        form_types,
-        index=None
-    )
+    uploaded_images = get_uploaded_images(tally_sheet)
+    results = get_results(uploaded_images)
     
-    org_unit = st.text_input("Organization Unit:")
+    image = uploaded_images[0]
+    result = results[0]
 
-    org_unit_options = dhis2_all_UIDs("organisationUnits", org_unit, **st.secrets.dhis2_credentials)
-    org_unit_dropdown = st.selectbox(
-        "Searched Organizations",
-        [id[0] for id in org_unit_options],
-        index=None
-    )
-    data_set = st.text_input("Data Set:")
-    data_set_options = dhis2_all_UIDs("dataSets", data_set, **st.secrets.dhis2_credentials)
-    data_set_dropdown = st.selectbox(
-        "Searched Datasets",
-        [id[0] for id in data_set_options],
-        index=None
-    )
-    period_start = st.date_input("Period Start Date:", format="YYYY-MM-DD")
-    period_end = st.date_input("Period End Date:", format="YYYY-MM-DD")
+    # form_type looks like [dataSet, orgUnit, period=[startDate, endDate]]
+    form_type = get_sheet_type_wrapper(result)
+    
+    if form_type[1]:
+        org_unit = st.text_input("Organization Unit", value=form_type[1])    
+    else: 
+        org_unit = st.text_input("Organization Unit", placeholder="Search organisation unit name")
+    
+    if org_unit:
+        org_unit_options = dhis2_all_UIDs("organisationUnits", [org_unit], **st.secrets.dhis2_credentials)
+        org_unit_dropdown = st.selectbox(
+            "Searched Organizations",
+            [id[0] for id in org_unit_options],
+            index=None
+        )
+
+    if form_type[0]:
+        data_set = st.text_input("Data Set", value=form_type[0])
+    else:
+        data_set = st.text_input("Data Set", placeholder="Search data set name")
+
+    if data_set:            
+        data_set_options = dhis2_all_UIDs("dataSets", [data_set], **st.secrets.dhis2_credentials)
+        data_set_dropdown = st.selectbox(
+            "Searched Datasets",
+            [id[0] for id in data_set_options],
+            index=None
+        )
+    if form_type[2]:
+        if form_type[2][0]:    
+            period_start = st.date_input("Period Start Date", format="YYYY-MM-DD", value=form_type[2][0])
+        else:
+            period_start = st.date_input("Period Start Date", format="YYYY-MM-DD") 
+        if form_type[2][1]:    
+            period_end = st.date_input("Period End Date", format="YYYY-MM-DD", value=form_type[2][1])
+        else:
+            period_end = st.date_input("Period End Date", format="YYYY-MM-DD")        
+    else:
+        period_start = st.date_input("Period Start Date", format="YYYY-MM-DD")
+        period_end = st.date_input("Period End Date", format="YYYY-MM-DD")
 
     uploaded_images = get_uploaded_images(tally_sheet)
     results = get_results(uploaded_images)
@@ -138,80 +159,34 @@ if len(tally_sheet) > 0:    # Will have prefilled data when OCR works
     #                 st.write(" ".join(word.value for word in line.words))
 
     for result in results:
-        confidence_lookup_dict = get_confidence_values(result)
+        confidence_lookup_dict = ocr_functions.get_confidence_values(result)
         table_dfs = []
         for sheet in tally_sheet:
             img = Image(src=sheet)
             table_df, confidence_df = get_tabular_content_wrapper(doctr_ocr, img, confidence_lookup_dict)
-            table_dfs.append(table_df)
+            table_dfs += table_df
 
-        # Display detected tables
-        # if table_dfs:
-        #     st.write("### Detected Tables ###")
-        #     for i, df in enumerate(table_dfs):
-        #         st.write(f"Table {i + 1}")
-        #         st.dataframe(pd.DataFrame(df))
-
-        # Assuming the form_type is "ICCM" for simplicity
-        form_type = "ICCM"
-        if form_type == "ICCM":
-            dfs = [
-                pd.DataFrame({'2-5m': [None, None, None, None, None, None, None, None, None, None],
-                              '6-59m': [None, None, None, None, None, None, None, None, None, None],
-                              '5-14y': [None, None, None, None, None, None, None, None, None, None],
-                              ">=15y": [None, None, None, None, None, None, None, None, None, None]},
-                             index=["No. of consultations", "Patients treated repeat past 28d",
-                                    "No. of patients with RDT performed", "No. RDT+: P. falciparum",
-                                    "No. RDT+: P. falciparum and/or mixed", "No. RDT+: non P. falciparum",
-                                    "RDT+ treated with ACT past 28 days", "No. of patients with danger signs",
-                                    "No. with bloody diarrhoea", "No. with acute watery diarrhoea"]),
-                pd.DataFrame({'6-59m': [None, None, None, None]},
-                             index=["Bilateral oedema", "MUAC SAM", "MUAC MAN", "MUAC no AM"]),
-                pd.DataFrame({'2-5m': [None, None, None, None, None, None, None, None, None, None, None, None],
-                              '6-59m': [None, None, None, None, None, None, None, None, None, None, None, None],
-                              '5-14y': [None, None, None, None, None, None, None, None, None, None, None, None],
-                              ">=15y": [None, None, None, None, None, None, None, None, None, None, None, None]},
-                             index=["Uncomplicated malaria", "Suspected severe malaria", "Uncomplicated pneumonia",
-                                    "Uncomplicated diarrhoea", "Cough/cold", "Severe acute malnutrition",
-                                    "Other (uncomplicated)", "Other (severe)", "Malaria with severe acute malnutrition",
-                                    "Malaria with pneumonia", "Malaria with diarrhoea", "Other combination"]),
-                pd.DataFrame(
-                    {'2-5m': [None, None, None, None, None, None], '6-59m': [None, None, None, None, None, None],
-                     '5-14y': [None, None, None, None, None, None], ">=15y": [None, None, None, None, None, None]},
-                    index=["No. treated ACT 1st line", "No. treated ACT 2nd line",
-                           "No. treated pre-referral artesunate", "No. of patients referred", "No. treated antibiotics",
-                           "No. treated ORS/Albendazole/Zn"]),
-                pd.DataFrame({'<5y': [None, None], '>=5y': [None, None]}, index=["No. patients with bednets at home",
-                                                                                 "No. patients that slept under a bednet last night"])
-            ]
-            titles = [
-                "Initial Assessment",
-                "Malnutrition",
-                "Diagnoses",
-                "Treatment",
-                "Bednets"
-            ]
 
             # Displaying the editable information
             df_index = 0
             edited_dfs = {}
-            for df in dfs:
-                st.write(titles[df_index])
+            for df in table_dfs:
+                st.write(f"Table {df_index+1}")
                 edited_dfs[df_index] = st.data_editor(df, key=df_index)
                 df_index += 1
 
-            # Download JSON, will eventually run the submission
-            st.download_button(
-                label="Download data as JSON",
-                data=convert_df(edited_dfs),
-                file_name="results.json",
-                mime="application/json"
-            )
+            # # Download JSON, will eventually run the submission
+            # st.download_button(
+            #     label="Download data as JSON",
+            #     data=convert_df(edited_dfs),
+            #     file_name="results.json",
+            #     mime="application/json"
+            # )
 
-            # Generate and display key-value pairs
-            if st.button("Generate Key-Value Pairs"):
-                key_value_pairs = []
-                for df in edited_dfs.values():
-                    key_value_pairs.extend(generate_key_value_pairs(df))
-                st.write("### Key-Value Pairs ###")
-                st.json(key_value_pairs)
+            # # Generate and display key-value pairs
+            # if st.button("Generate Key-Value Pairs"):
+            #     key_value_pairs = []
+            #     for df in edited_dfs.values():
+            #         key_value_pairs.extend(ocr_functions.generate_key_value_pairs(df))
+            #     st.write("### Key-Value Pairs ###")
+            #     st.json(key_value_pairs)
