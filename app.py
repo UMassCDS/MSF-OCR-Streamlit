@@ -74,6 +74,9 @@ def create_ocr():
     doctr_ocr = DocTR(detect_language=False)
     return ocr_model, doctr_ocr
 
+# Set the page layout to centered
+# st.set_page_config(layout="wide")
+
 # Initiation
 if 'upload_key' not in st.session_state: 
     st.session_state['upload_key'] = 1000
@@ -118,7 +121,7 @@ if len(tally_sheet) > 0:    # Will have prefilled data when OCR works
         org_unit_options = dhis2_all_UIDs("organisationUnits", [org_unit], **st.secrets.dhis2_credentials)
         org_unit_dropdown = st.selectbox(
             "Searched Organizations",
-            [id[0] for id in org_unit_options],
+            [""]+[id[0] for id in org_unit_options],
             index=None
         )
 
@@ -170,10 +173,29 @@ if len(tally_sheet) > 0:    # Will have prefilled data when OCR works
             # Displaying the editable information
             df_index = 0
             edited_dfs = {}
-            for df in table_dfs:
-                st.write(f"Table {df_index+1}")
-                edited_dfs[df_index] = st.data_editor(df, key=df_index)
-                df_index += 1
+            for i, df in enumerate(table_dfs):
+                st.write(f"Table {i+1}")
+    
+                # Create two columns
+                col1, col2 = st.columns([4, 1])  # Adjust the ratio as needed
+                
+                with col1:
+                    edited_dfs[i] = st.data_editor(df, num_rows="dynamic", key=f"editor_{i}")
+                
+                with col2:
+                    # Add column functionality
+                    new_col_name = st.text_input(f"New column name", key=f"new_col_{i}")
+                    if st.button(f"Add Column", key=f"add_col_{i}"):
+                        if new_col_name:
+                            df[new_col_name] = None
+
+                    # Delete column functionality
+                    if not df.empty:
+                        col_to_delete = st.selectbox(f"Column to delete", df.columns, key=f"del_col_{i}")
+                        if st.button(f"Delete Column", key=f"delete_col_{i}"):
+                            df = df.drop(columns=[col_to_delete])
+    
+                table_dfs[i] = df  # Update the original dataframe
 
             # # Download JSON, will eventually run the submission
             # st.download_button(

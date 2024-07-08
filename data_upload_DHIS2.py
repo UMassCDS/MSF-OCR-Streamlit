@@ -15,7 +15,7 @@ def getAllUIDs(item_type, search_items, dhis2_username, dhis2_password, DHIS2_Te
     data = response.json()
 
     items = data[item_type]
-    print(items[0])
+    # print(items[0])
     print(f"{len(data[item_type])} matches found for {search_items}")
 
     id = [(item['displayName'], item['id']) for item in items]
