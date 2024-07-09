@@ -8,13 +8,12 @@ from doctr.models import ocr_predictor
 from img2table.document import Image as Image
 from img2table.ocr import DocTR
 
-# Initializing variables
-form_types = ("ICCM", "OPD", "RHGynobs", "Vaccination")
-
-
 # Function definitions
 @st.cache_data
 def data_values(df):
+    """
+    Converts data from tables into key-value pairs 
+    """
     data_values = []
     columns = df.columns.tolist()
     for col, i in df.iterrows():
@@ -27,6 +26,13 @@ def data_values(df):
 
 @st.cache_data
 def dhis2_all_UIDs(item_type, search_items, dhis2_username, dhis2_password, DHIS2_Test_Server_URL):
+    """
+    Gets all fields similar to search_items from the metadata
+    :param item_type: Defines the type of metadata (dataset, organisation unit, data element) to search
+           search_items: A list of text to search
+           dhis2_username, dhis2_password, DHIS2_Test_Server_URL: DHIS2 login credentials
+    :return A list of all (name,id) pairs of fields that match the search words       
+    """
     if search_items == "" or search_items is None:
         return []
     else:
@@ -34,6 +40,11 @@ def dhis2_all_UIDs(item_type, search_items, dhis2_username, dhis2_password, DHIS
 
 
 def convert_df(dfs):
+    """
+    Converts tabular data recognized into json format required to upload data into DHIS2
+    :param Data as dataframes
+    :return Data in json format with form identification information
+    """
     json_export = {}
     if data_set == "":
         data_set_id = ""
@@ -53,6 +64,11 @@ def convert_df(dfs):
     return json.dumps(json_export)
 
 def correct_field_names(dfs):
+    """
+    Corrects the text data in tables by replacing with closest match among the hardcoded fieldnames
+    :param Data as dataframes
+    :return Corrected data as dataframes
+    """
     dataElement_list = ['', 'Paed (0-59m) vacc target population', 'BCG', 'HepB (birth dose, within 24h)',
             'HepB (birth dose, 24h or later)',
             'Polio (OPV) 0 (birth dose)', 'Polio (OPV) 1 (from 6 wks)', 'Polio (OPV) 2', 'Polio (OPV) 3',
@@ -89,6 +105,11 @@ def correct_field_names(dfs):
 
 # Function to set the first row as header
 def set_first_row_as_header(df):
+    """
+    Sets the first row in the recognized table (ideally the header information for each column) as the table header
+    :param Dataframe
+    :return Dataframe after correction
+    """
     df.columns = df.iloc[0]  
     df = df.iloc[1:]  
     df.reset_index(drop=True, inplace=True)  
@@ -97,6 +118,11 @@ def set_first_row_as_header(df):
 
 @st.cache_data
 def get_uploaded_images(tally_sheet):
+    """
+    List of images uploaded by user as docTR DocumentFiles
+    :param Files uploaded by user
+    :return List of images uploaded by user as docTR DocumentFiles
+    """
     return [DocumentFile.from_images(sheet.read()) for sheet in tally_sheet]
 
 @st.cache_data
@@ -113,6 +139,9 @@ def get_sheet_type_wrapper(_result):
 
 @st.cache_resource
 def create_ocr():
+    """
+    Load docTR ocr model and img2table docTR model  
+    """
     ocr_model = ocr_predictor(det_arch='db_resnet50', reco_arch='crnn_vgg16_bn', pretrained=True)
     doctr_ocr = DocTR(detect_language=False)
     return ocr_model, doctr_ocr
@@ -140,7 +169,7 @@ with st.expander("Show Images"):
 ocr_model, doctr_ocr = create_ocr()
 
 # Once images are uploaded
-if len(tally_sheet) > 0:    # Will have prefilled data when OCR works
+if len(tally_sheet) > 0:    
     
     if st.button("Clear Form") and 'upload_key' in st.session_state.keys():
         st.session_state.upload_key += 1
@@ -149,17 +178,23 @@ if len(tally_sheet) > 0:    # Will have prefilled data when OCR works
     uploaded_images = get_uploaded_images(tally_sheet)
     results = get_results(uploaded_images)
     
+    ### CORRECT THIS TO ALLOW PROCESSING OF ALL IMAGES
+    # ***************************************
     image = uploaded_images[0]
     result = results[0]
+    # ***************************************
 
     # form_type looks like [dataSet, orgUnit, period=[startDate, endDate]]
     form_type = get_sheet_type_wrapper(result)
     
+    # Initialize org_unit with any recognized text from tally sheet
+    # Change the value when user edits the field
     if form_type[1]:
         org_unit = st.text_input("Organization Unit", value=form_type[1])    
     else: 
         org_unit = st.text_input("Organization Unit", placeholder="Search organisation unit name")
     
+    # Get all UIDs corresponding to the text field value 
     if org_unit:
         org_unit_options = dhis2_all_UIDs("organisationUnits", [org_unit], **st.secrets.dhis2_credentials)
         org_unit_dropdown = st.selectbox(
@@ -168,6 +203,7 @@ if len(tally_sheet) > 0:    # Will have prefilled data when OCR works
             index=None
         )
 
+    # Same as org_unit
     if form_type[0]:
         data_set = st.text_input("Data Set", value=form_type[0])
     else:
@@ -180,6 +216,8 @@ if len(tally_sheet) > 0:    # Will have prefilled data when OCR works
             [id[0] for id in data_set_options],
             index=None
         )
+
+    # Initialize with period values recognized from tally sheet or entered by user    
     if form_type[2]:
         if form_type[2][0]:    
             period_start = st.date_input("Period Start Date", format="YYYY-MM-DD", value=form_type[2][0])
@@ -193,15 +231,10 @@ if len(tally_sheet) > 0:    # Will have prefilled data when OCR works
         period_start = st.date_input("Period Start Date", format="YYYY-MM-DD")
         period_end = st.date_input("Period End Date", format="YYYY-MM-DD")
 
-    # Display OCR results
-    # for i, result in enumerate(results):
-    #     st.write(f"OCR Result for Image {i + 1}:")
-    #     for page in result.pages:
-    #         for block in page.blocks:
-    #             for line in block.lines:
-    #                 st.write(" ".join(word.value for word in line.words))
 
+    # Populate streamlit with data recognized from tally sheets
     for result in results:
+        # Get tabular data ad dataframes
         confidence_lookup_dict = ocr_functions.get_confidence_values(result)
         table_dfs = []
         for sheet in tally_sheet:
@@ -213,20 +246,23 @@ if len(tally_sheet) > 0:    # Will have prefilled data when OCR works
             # for id, table in enumerate(table_dfs):
             #     table_dfs[id] = set_first_row_as_header(table)
 
+            # Store table data in session state
             if 'table_dfs' not in st.session_state:
                 st.session_state.table_dfs = table_dfs
 
             print(table_dfs)
+
             # Displaying the editable information
             df_index = 0
             for i, df in enumerate(st.session_state.table_dfs):
                 st.write(f"Table {i+1}")
     
-                # Create two columns
-                col1, col2 = st.columns([4, 1])  # Adjust the ratio as needed
+                col1, col2 = st.columns([4, 1]) 
                 
                 with col1:
+                    # Display tables as editable fields
                     table_dfs[i] = st.data_editor(df, num_rows="dynamic", key=f"editor_{i}")
+                
                 with col2:
                     # Add column functionality
                     new_col_name = st.text_input(f"New column name", key=f"new_col_{i}")
@@ -240,9 +276,11 @@ if len(tally_sheet) > 0:    # Will have prefilled data when OCR works
                         if st.button(f"Delete Column", key=f"delete_col_{i}"):
                             table_dfs[i] = table_dfs[i].drop(columns=[col_to_delete])
 
+            # Button that when clicked corrects the row and column indices of table with best match 
             if st.button(f"Correct field names", key=f"correct_names"):
                 table_dfs = correct_field_names(table_dfs)   
 
+            # Rerun the code to display any edits made by user
             for idx, table in enumerate(table_dfs):
                 if not table_dfs[idx].equals(st.session_state.table_dfs[idx]):
                     st.session_state.table_dfs = table_dfs
