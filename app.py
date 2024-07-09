@@ -173,6 +173,8 @@ if len(tally_sheet) > 0:
     
     if st.button("Clear Form") and 'upload_key' in st.session_state.keys():
         st.session_state.upload_key += 1
+        if 'table_dfs' in st.session_state:
+            del st.session_state['table_dfs']
         st.rerun()
         
     uploaded_images = get_uploaded_images(tally_sheet)
@@ -253,7 +255,6 @@ if len(tally_sheet) > 0:
             print(table_dfs)
 
             # Displaying the editable information
-            df_index = 0
             for i, df in enumerate(st.session_state.table_dfs):
                 st.write(f"Table {i+1}")
     
