@@ -52,6 +52,49 @@ def convert_df(dfs):
     json_export["dataValues"] = data_values_list
     return json.dumps(json_export)
 
+def correct_field_names(dfs):
+    dataElement_list = ['', 'Paed (0-59m) vacc target population', 'BCG', 'HepB (birth dose, within 24h)',
+            'HepB (birth dose, 24h or later)',
+            'Polio (OPV) 0 (birth dose)', 'Polio (OPV) 1 (from 6 wks)', 'Polio (OPV) 2', 'Polio (OPV) 3',
+            'Polio (IPV)', 'DTP+Hib+HepB (pentavalent) 1', 'DTP+Hib+HepB (pentavalent) 2',
+            'DTP+Hib+HepB (pentavalent) 3']
+    categoryOptionsList = ['', '0-11m', '12-59m', '5-14y']
+    
+    for table in dfs:
+        for row in range(table.shape[0]):
+            max_similarity_dataElement = 0
+            dataElement = ""
+            text = table.iloc[row,0]
+            if text is not None:
+                for name in dataElement_list:
+                    sim = ocr_functions.letter_by_letter_similarity(text, name)
+                    if max_similarity_dataElement < sim:
+                        max_similarity_dataElement = sim
+                        dataElement = name
+                table.iloc[row,0] = dataElement
+
+    for table in dfs:
+        for id,col in enumerate(table.columns):
+            max_similarity_catOpt = 0
+            catOpt = ""
+            text = table.iloc[0,id]
+            if text is not None:
+                for name in categoryOptionsList:
+                    sim = ocr_functions.letter_by_letter_similarity(text, name)
+                    if max_similarity_catOpt < sim:
+                        max_similarity_catOpt = sim
+                        catOpt = name
+                table.iloc[0,id] = catOpt
+    return dfs        
+
+# Function to set the first row as header
+def set_first_row_as_header(df):
+    df.columns = df.iloc[0]  
+    df = df.iloc[1:]  
+    df.reset_index(drop=True, inplace=True)  
+    print(df)
+    return df
+
 @st.cache_data
 def get_uploaded_images(tally_sheet):
     return [DocumentFile.from_images(sheet.read()) for sheet in tally_sheet]
@@ -150,9 +193,6 @@ if len(tally_sheet) > 0:    # Will have prefilled data when OCR works
         period_start = st.date_input("Period Start Date", format="YYYY-MM-DD")
         period_end = st.date_input("Period End Date", format="YYYY-MM-DD")
 
-    uploaded_images = get_uploaded_images(tally_sheet)
-    results = get_results(uploaded_images)
-
     # Display OCR results
     # for i, result in enumerate(results):
     #     st.write(f"OCR Result for Image {i + 1}:")
@@ -168,35 +208,47 @@ if len(tally_sheet) > 0:    # Will have prefilled data when OCR works
             img = Image(src=sheet)
             table_df, confidence_df = get_tabular_content_wrapper(doctr_ocr, img, confidence_lookup_dict)
             table_dfs += table_df
+            
+            # Change this line of code to docTR ocr function
+            # for id, table in enumerate(table_dfs):
+            #     table_dfs[id] = set_first_row_as_header(table)
 
+            if 'table_dfs' not in st.session_state:
+                st.session_state.table_dfs = table_dfs
 
+            print(table_dfs)
             # Displaying the editable information
             df_index = 0
-            edited_dfs = {}
-            for i, df in enumerate(table_dfs):
+            for i, df in enumerate(st.session_state.table_dfs):
                 st.write(f"Table {i+1}")
     
                 # Create two columns
                 col1, col2 = st.columns([4, 1])  # Adjust the ratio as needed
                 
                 with col1:
-                    edited_dfs[i] = st.data_editor(df, num_rows="dynamic", key=f"editor_{i}")
-                
+                    table_dfs[i] = st.data_editor(df, num_rows="dynamic", key=f"editor_{i}")
                 with col2:
                     # Add column functionality
                     new_col_name = st.text_input(f"New column name", key=f"new_col_{i}")
                     if st.button(f"Add Column", key=f"add_col_{i}"):
                         if new_col_name:
-                            df[new_col_name] = None
+                            table_dfs[i][new_col_name] = None
 
                     # Delete column functionality
-                    if not df.empty:
-                        col_to_delete = st.selectbox(f"Column to delete", df.columns, key=f"del_col_{i}")
+                    if not table_dfs[i].empty:
+                        col_to_delete = st.selectbox(f"Column to delete", table_dfs[i].columns, key=f"del_col_{i}")
                         if st.button(f"Delete Column", key=f"delete_col_{i}"):
-                            df = df.drop(columns=[col_to_delete])
-    
-                table_dfs[i] = df  # Update the original dataframe
+                            table_dfs[i] = table_dfs[i].drop(columns=[col_to_delete])
 
+            if st.button(f"Correct field names", key=f"correct_names"):
+                table_dfs = correct_field_names(table_dfs)   
+
+            for idx, table in enumerate(table_dfs):
+                if not table_dfs[idx].equals(st.session_state.table_dfs[idx]):
+                    st.session_state.table_dfs = table_dfs
+                    st.rerun()
+
+            
             # # Download JSON, will eventually run the submission
             # st.download_button(
             #     label="Download data as JSON",
@@ -205,10 +257,11 @@ if len(tally_sheet) > 0:    # Will have prefilled data when OCR works
             #     mime="application/json"
             # )
 
-            # # Generate and display key-value pairs
+            # Generate and display key-value pairs
             # if st.button("Generate Key-Value Pairs"):
+            #     final_dfs = st.session_state.table_dfs
             #     key_value_pairs = []
-            #     for df in edited_dfs.values():
+            #     for df in final_dfs:
             #         key_value_pairs.extend(ocr_functions.generate_key_value_pairs(df))
             #     st.write("### Key-Value Pairs ###")
             #     st.json(key_value_pairs)
