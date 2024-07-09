@@ -133,9 +133,8 @@ def get_results(uploaded_images):
 def get_tabular_content_wrapper(_doctr_ocr, img, confidence_lookup_dict):
     return ocr_functions.get_tabular_content(_doctr_ocr, img, confidence_lookup_dict)
 
-@st.cache_data
-def get_sheet_type_wrapper(_result):
-    return ocr_functions.get_sheet_type(_result)
+def get_sheet_type_wrapper(result):
+    return ocr_functions.get_sheet_type(result)
 
 @st.cache_resource
 def create_ocr():
