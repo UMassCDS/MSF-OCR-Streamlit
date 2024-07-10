@@ -5,8 +5,8 @@ import json
 import data_upload_DHIS2 as dhis2
 import io
 import anthropic
-from PIL import Image
 import pandas as pd
+from PIL import Image, ExifTags
 
 
 # Function definitions
@@ -96,6 +96,7 @@ def process_image_with_claude(api_key, img_path):
         max_tokens=OUPUT_SIZE_LIMIT,
         # If set to 0, the model will use log probability 96 to automatically increase the temperature until certain thresholds are hit.
         temperature=0.1,
+        top_p=0,
         messages=[
             {
                 "role": "user",
@@ -122,6 +123,34 @@ def process_image_with_claude(api_key, img_path):
         ]
     )
     return json.loads(message.content[0].text)
+
+
+def correct_image_orientation(image_path):
+    """
+    Corrects the orientation of an image based on its EXIF data.
+
+    Parameters:
+    image_path (str): The path to the image file.
+
+    Returns:
+    PIL.Image.Image: The image with corrected orientation.
+    """
+    image = Image.open(image_path)
+    orientation = None
+    try:
+        for orientation in ExifTags.TAGS.keys():
+            if ExifTags.TAGS[orientation] == 'Orientation':
+                break
+        exif = dict(image._getexif().items())
+        if exif.get(orientation) == 3:
+            image = image.rotate(180, expand=True)
+        elif exif.get(orientation) == 6:
+            image = image.rotate(270, expand=True)
+        elif exif.get(orientation) == 8:
+            image = image.rotate(90, expand=True)
+    except (AttributeError, KeyError, IndexError):
+        pass
+    return image
 
 
 @st.cache_data
@@ -203,7 +232,8 @@ tally_sheet = st.file_uploader("Please upload one or more images of a tally shee
 # Displaying images so the user can see them
 with st.expander("Show Images"):
     for sheet in tally_sheet:
-        st.image(sheet)
+        image = correct_image_orientation(sheet)
+        st.image(image)
 
 # OCR Model
 api_key = os.environ.get("ANTHROPIC_API_KEY")
@@ -307,10 +337,10 @@ if len(tally_sheet) > 0:
                 if st.button(f"Delete Column", key=f"delete_col_{i}"):
                     st.session_state.table_dfs[i] = st.session_state.table_dfs[i].drop(columns=[col_to_delete])
 
-            # # Download JSON, will eventually run the submission
+            # Download JSON, will eventually run the submission
             # st.download_button(
             #     label="Download data as JSON",
-            #     data=convert_df(edited_dfs),
+            #     data=convert_df(table_dfs),
             #     file_name="results.json",
             #     mime="application/json"
             # )
