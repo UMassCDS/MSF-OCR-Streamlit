@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import json
-import data_upload_DHIS2 as dhis2
+from msfocr.data import data_upload_DHIS2 as dhis2
 from msfocr.docTR import ocr_functions
 from doctr.io import DocumentFile
 from doctr.models import ocr_predictor
@@ -25,7 +25,7 @@ def data_values(df):
 
 
 @st.cache_data
-def dhis2_all_UIDs(item_type, search_items, dhis2_username, dhis2_password, DHIS2_Test_Server_URL):
+def dhis2_all_UIDs(item_type, search_items):
     """
     Gets all fields similar to search_items from the metadata
     :param item_type: Defines the type of metadata (dataset, organisation unit, data element) to search
@@ -36,7 +36,7 @@ def dhis2_all_UIDs(item_type, search_items, dhis2_username, dhis2_password, DHIS
     if search_items == "" or search_items is None:
         return []
     else:
-        return dhis2.getAllUIDs(item_type, search_items, dhis2_username, dhis2_password, DHIS2_Test_Server_URL)
+        return dhis2.getAllUIDs(item_type, search_items)
 
 
 def convert_df(dfs):
@@ -58,7 +58,7 @@ def convert_df(dfs):
         org_unit_id = dict(org_unit_options)[org_unit_dropdown]
     json_export["orgUnit"] = f"{org_unit_id}"
     data_values_list = []
-    for df in dfs.values():
+    for df in dfs:
         data_values_list += data_values(df)
     json_export["dataValues"] = data_values_list
     return json.dumps(json_export)
@@ -113,7 +113,7 @@ def set_first_row_as_header(df):
     df.columns = df.iloc[0]  
     df = df.iloc[1:]  
     df.reset_index(drop=True, inplace=True)  
-    print(df)
+    # print(df)
     return df
 
 @st.cache_data
@@ -136,6 +136,14 @@ def get_tabular_content_wrapper(_doctr_ocr, img, confidence_lookup_dict):
 def get_sheet_type_wrapper(result):
     return ocr_functions.get_sheet_type(result)
 
+@st.cache_data
+def get_data_sets(data_set_uids):
+    return dhis2.getDataSets(data_set_uids)
+
+@st.cache_data
+def get_org_unit_children(org_unit_id):
+    return dhis2.getOrgUnitChildren(org_unit_id)
+
 @st.cache_resource
 def create_ocr():
     """
@@ -144,6 +152,9 @@ def create_ocr():
     ocr_model = ocr_predictor(det_arch='db_resnet50', reco_arch='crnn_vgg16_bn', pretrained=True)
     doctr_ocr = DocTR(detect_language=False)
     return ocr_model, doctr_ocr
+
+def create_server():
+    dhis2.configure_DHIS2_server()
 
 # Set the page layout to centered
 # st.set_page_config(layout="wide")
@@ -166,6 +177,7 @@ with st.expander("Show Images"):
 
 # OCR Model
 ocr_model, doctr_ocr = create_ocr()
+create_server()
 
 # Once images are uploaded
 if len(tally_sheet) > 0:    
@@ -197,26 +209,46 @@ if len(tally_sheet) > 0:
     
     # Get all UIDs corresponding to the text field value 
     if org_unit:
-        org_unit_options = dhis2_all_UIDs("organisationUnits", [org_unit], **st.secrets.dhis2_credentials)
+        org_unit_options = dhis2_all_UIDs("organisationUnits", [org_unit])
         org_unit_dropdown = st.selectbox(
             "Searched Organizations",
-            [""]+[id[0] for id in org_unit_options],
+            [id[0] for id in org_unit_options],
             index=None
         )
+    
+    # Get org unit children    
+    if org_unit_dropdown is not None:
+        org_unit_id = [id[1] for id in org_unit_options if id[0] == org_unit_dropdown][0]
+        org_unit_children_options = get_org_unit_children(org_unit_id)
+        org_unit_children_dropdown = st.selectbox(
+            "Organization Children",
+            sorted([id[0] for id in org_unit_children_options]),
+            index=None
+        )
+        
+        if org_unit_children_dropdown is not None:
+            
+            data_set_uids = [id[1] for id in org_unit_children_options if id[0] == org_unit_children_dropdown][0]
+            data_set_options = get_data_sets(data_set_uids)
+            data_set = st.selectbox(
+                "Data Set",
+                sorted([id[0] for id in data_set_options]),
+                index=None
+            )
 
     # Same as org_unit
-    if form_type[0]:
-        data_set = st.text_input("Data Set", value=form_type[0])
-    else:
-        data_set = st.text_input("Data Set", placeholder="Search data set name")
+    # if form_type[0]:
+    #     data_set = st.text_input("Data Set", value=form_type[0])
+    # else:
+    #     data_set = st.text_input("Data Set", placeholder="Search data set name")
 
-    if data_set:            
-        data_set_options = dhis2_all_UIDs("dataSets", [data_set], **st.secrets.dhis2_credentials)
-        data_set_dropdown = st.selectbox(
-            "Searched Datasets",
-            [id[0] for id in data_set_options],
-            index=None
-        )
+    # if data_set:            
+    #     data_set_options = dhis2_all_UIDs("dataSets", [data_set])
+    #     data_set_dropdown = st.selectbox(
+    #         "Searched Datasets",
+    #         [id[0] for id in data_set_options],
+    #         index=None
+    #     )
 
     # Initialize with period values recognized from tally sheet or entered by user    
     if form_type[2]:
@@ -251,7 +283,7 @@ if len(tally_sheet) > 0:
             if 'table_dfs' not in st.session_state:
                 st.session_state.table_dfs = table_dfs
 
-            print(table_dfs)
+            # print(table_dfs)
 
             # Displaying the editable information
             for i, df in enumerate(st.session_state.table_dfs):
@@ -290,16 +322,16 @@ if len(tally_sheet) > 0:
             # # Download JSON, will eventually run the submission
             # st.download_button(
             #     label="Download data as JSON",
-            #     data=convert_df(edited_dfs),
+            #     data=convert_df(table_dfs),
             #     file_name="results.json",
             #     mime="application/json"
             # )
 
             # Generate and display key-value pairs
-            # if st.button("Generate Key-Value Pairs"):
-            #     final_dfs = st.session_state.table_dfs
-            #     key_value_pairs = []
-            #     for df in final_dfs:
-            #         key_value_pairs.extend(ocr_functions.generate_key_value_pairs(df))
-            #     st.write("### Key-Value Pairs ###")
-            #     st.json(key_value_pairs)
+            if st.button("Generate Key-Value Pairs"):
+                final_dfs = st.session_state.table_dfs
+                key_value_pairs = []
+                for df in final_dfs:
+                    key_value_pairs.extend(ocr_functions.generate_key_value_pairs(df))
+                st.write("### Key-Value Pairs ###")
+                st.json(key_value_pairs)
