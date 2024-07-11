@@ -7,6 +7,7 @@ from doctr.io import DocumentFile
 from doctr.models import ocr_predictor
 from img2table.document import Image as Image
 from img2table.ocr import DocTR
+from PIL import Image, ExifTags
 
 # Function definitions
 @st.cache_data
@@ -145,6 +146,34 @@ def create_ocr():
     doctr_ocr = DocTR(detect_language=False)
     return ocr_model, doctr_ocr
 
+def correct_image_orientation(image_path):
+    """
+    Corrects the orientation of an image based on its EXIF data.
+
+    Parameters:
+    image_path (str): The path to the image file.
+
+    Returns:
+    PIL.Image.Image: The image with corrected orientation.
+    """
+    image = Image.open(image_path)
+    orientation = None
+    try:
+        for orientation in ExifTags.TAGS.keys():
+            if ExifTags.TAGS[orientation] == 'Orientation':
+                break
+        exif = dict(image._getexif().items())
+        if exif.get(orientation) == 3:
+            image = image.rotate(180, expand=True)
+        elif exif.get(orientation) == 6:
+            image = image.rotate(270, expand=True)
+        elif exif.get(orientation) == 8:
+            image = image.rotate(90, expand=True)
+    except (AttributeError, KeyError, IndexError):
+        pass
+    return image
+
+
 # Set the page layout to centered
 # st.set_page_config(layout="wide")
 
@@ -162,6 +191,7 @@ tally_sheet = st.file_uploader("Please upload one or more images of a tally shee
 # Displaying images so the user can see them
 with st.expander("Show Images"):
     for sheet in tally_sheet:
+        image = correct_image_orientation(sheet)
         st.image(sheet)
 
 # OCR Model
