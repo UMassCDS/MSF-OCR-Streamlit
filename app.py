@@ -73,7 +73,8 @@ def correct_field_names(dfs):
             'HepB (birth dose, 24h or later)',
             'Polio (OPV) 0 (birth dose)', 'Polio (OPV) 1 (from 6 wks)', 'Polio (OPV) 2', 'Polio (OPV) 3',
             'Polio (IPV)', 'DTP+Hib+HepB (pentavalent) 1', 'DTP+Hib+HepB (pentavalent) 2',
-            'DTP+Hib+HepB (pentavalent) 3']
+            'DTP+Hib+HepB (pentavalent) 3', 'DTP, TD, Td or TT booster', 'Measles 0', 'Measles 1',
+            'Measles 2', 'MMR 0', 'MMR 1', 'MMR 2', 'PCV 1', 'PCV 2', 'PCV 3', 'PCV booster']
     categoryOptionsList = ['', '0-11m', '12-59m', '5-14y']
     
     for table in dfs:
