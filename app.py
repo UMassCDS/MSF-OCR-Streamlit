@@ -3,10 +3,13 @@ import pandas as pd
 import json
 from msfocr.data import data_upload_DHIS2 as dhis2
 from msfocr.docTR import ocr_functions
+from msfocr.data.data_upload_DHIS2 import configure_DHIS2_server
 from doctr.io import DocumentFile
 from doctr.models import ocr_predictor
 from img2table.document import Image as Image
 from img2table.ocr import DocTR
+import copy
+import requests
 
 # Function definitions
 @st.cache_data
@@ -49,7 +52,7 @@ def convert_df(dfs):
     if data_set == "":
         data_set_id = ""
     else:
-        data_set_id = dict(data_set_options)[data_set_dropdown]
+        data_set_id = dict(data_set_options)[data_set]
     json_export["dataSet"] = f"{data_set_id}"
     json_export["period"] = f"{period_start}P7D"
     if org_unit == "":
@@ -61,6 +64,27 @@ def convert_df(dfs):
     for df in dfs:
         data_values_list += data_values(df)
     json_export["dataValues"] = data_values_list
+    return json.dumps(json_export)
+
+def json_export(kv_pairs):
+    """
+    Converts tabular data recognized into json format required to upload data into DHIS2
+    :param Data as dataframes
+    :return Data in json format with form identification information
+    """
+    json_export = {}
+    if org_unit_dropdown == None:
+        raise ValueError("Please select organisation unit")
+    else:
+        org_unit_id = dict(org_unit_options)[org_unit_dropdown]
+        if data_set == "":
+            raise ValueError("Please select data set")
+        else:
+            data_set_id = dict(data_set_options)[data_set]
+    json_export["dataSet"] = f"{data_set_id}"
+    json_export["period"] = f"{period_start}P7D"
+    json_export["orgUnit"] = f"{org_unit_id}"
+    json_export["dataValues"] = kv_pairs
     return json.dumps(json_export)
 
 def correct_field_names(dfs):
@@ -274,10 +298,6 @@ if len(tally_sheet) > 0:
             img = Image(src=sheet)
             table_df, confidence_df = get_tabular_content_wrapper(doctr_ocr, img, confidence_lookup_dict)
             table_dfs += table_df
-            
-            # Change this line of code to docTR ocr function
-            # for id, table in enumerate(table_dfs):
-            #     table_dfs[id] = set_first_row_as_header(table)
 
             # Store table data in session state
             if 'table_dfs' not in st.session_state:
@@ -326,12 +346,47 @@ if len(tally_sheet) > 0:
             #     file_name="results.json",
             #     mime="application/json"
             # )
+            if 'data_payload' not in st.session_state:
+                st.session_state.data_payload = None
 
+            configure_DHIS2_server("settings.ini")
             # Generate and display key-value pairs
             if st.button("Generate Key-Value Pairs"):
-                final_dfs = st.session_state.table_dfs
+                # Set first row as header of df
+                final_dfs = copy.deepcopy(st.session_state.table_dfs)
+                for id, table in enumerate(final_dfs):
+                    final_dfs[id] = set_first_row_as_header(table)
+                print(final_dfs)
                 key_value_pairs = []
                 for df in final_dfs:
                     key_value_pairs.extend(ocr_functions.generate_key_value_pairs(df))
                 st.write("### Key-Value Pairs ###")
-                st.json(key_value_pairs)
+                print(key_value_pairs)
+                
+                st.session_state.data_payload = json_export(key_value_pairs)
+                print(st.session_state.data_payload)
+                
+            if st.button("Upload to DHIS2"):
+                if st.session_state.data_payload==None:
+                    raise ValueError("Data empty - generate key value pairs first")
+                else:
+                    URL = ''
+                    ############# write this in OCR functions
+                    data_value_set_url = f'{URL}/api/dataValueSets?dryRun=true'
+                    # Send the POST request with the data payload
+                    response = requests.post(
+                        data_value_set_url,
+                        auth=('', ''),
+                        headers={'Content-Type': 'application/json'},
+                        data=st.session_state.data_payload
+                    )
+
+                    # # Check the response status
+                    # if response.status_code == 200:
+                    #     print('Data entry dry run successful')
+                    #     print('Response data:')
+                    #     print(response.json())
+                    # else:
+                    #     print(f'Failed to enter data, status code: {response.status_code}')
+                    #     print('Response data:')
+                    #     print(response.json())
