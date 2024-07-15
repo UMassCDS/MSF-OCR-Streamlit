@@ -1,12 +1,17 @@
 import streamlit as st
 import pandas as pd
 import json
-import data_upload_DHIS2 as dhis2
+from msfocr.data import data_upload_DHIS2 as dhis2
 from msfocr.docTR import ocr_functions
+from msfocr.data.data_upload_DHIS2 import configure_DHIS2_server
 from doctr.io import DocumentFile
 from doctr.models import ocr_predictor
 from img2table.document import Image as Image
+from PIL import Image as PILImage, ExifTags
 from img2table.ocr import DocTR
+import copy
+import requests
+from datetime import date
 
 # Function definitions
 @st.cache_data
@@ -25,7 +30,7 @@ def data_values(df):
 
 
 @st.cache_data
-def dhis2_all_UIDs(item_type, search_items, dhis2_username, dhis2_password, DHIS2_Test_Server_URL):
+def dhis2_all_UIDs(item_type, search_items):
     """
     Gets all fields similar to search_items from the metadata
     :param item_type: Defines the type of metadata (dataset, organisation unit, data element) to search
@@ -36,31 +41,48 @@ def dhis2_all_UIDs(item_type, search_items, dhis2_username, dhis2_password, DHIS
     if search_items == "" or search_items is None:
         return []
     else:
-        return dhis2.getAllUIDs(item_type, search_items, dhis2_username, dhis2_password, DHIS2_Test_Server_URL)
+        return dhis2.getAllUIDs(item_type, search_items)
 
 
-def convert_df(dfs):
+# def convert_df(dfs):
+#     """
+#     Converts tabular data recognized into json format required to upload data into DHIS2
+#     :param Data as dataframes
+#     :return Data in json format with form identification information
+#     """
+#     json_export = {}
+#     if data_set == "":
+#         data_set_id = ""
+#     else:
+#         data_set_id = dict(data_set_options)[data_set]
+#     json_export["dataSet"] = f"{data_set_id}"
+#     json_export["period"] = f"{period_start}P7D"
+#     if org_unit == "":
+#         org_unit_id = ""
+#     else:
+#         org_unit_id = dict(org_unit_options)[org_unit_dropdown]
+#     json_export["orgUnit"] = f"{org_unit_id}"
+#     data_values_list = []
+#     for df in dfs:
+#         data_values_list += data_values(df)
+#     json_export["dataValues"] = data_values_list
+#     return json.dumps(json_export)
+
+def json_export(kv_pairs):
     """
     Converts tabular data recognized into json format required to upload data into DHIS2
     :param Data as dataframes
     :return Data in json format with form identification information
     """
     json_export = {}
+    if org_unit_dropdown == None:
+        raise ValueError("Please select organisation unit")
     if data_set == "":
-        data_set_id = ""
-    else:
-        data_set_id = dict(data_set_options)[data_set_dropdown]
-    json_export["dataSet"] = f"{data_set_id}"
-    json_export["period"] = f"{period_start}P7D"
-    if org_unit == "":
-        org_unit_id = ""
-    else:
-        org_unit_id = dict(org_unit_options)[org_unit_dropdown]
-    json_export["orgUnit"] = f"{org_unit_id}"
-    data_values_list = []
-    for df in dfs.values():
-        data_values_list += data_values(df)
-    json_export["dataValues"] = data_values_list
+        raise ValueError("Please select data set")
+    json_export["dataSet"] = data_set_selected_id
+    json_export["period"] = get_period()
+    json_export["orgUnit"] = org_unit_child_id
+    json_export["dataValues"] = kv_pairs
     return json.dumps(json_export)
 
 def correct_field_names(dfs):
@@ -73,7 +95,8 @@ def correct_field_names(dfs):
             'HepB (birth dose, 24h or later)',
             'Polio (OPV) 0 (birth dose)', 'Polio (OPV) 1 (from 6 wks)', 'Polio (OPV) 2', 'Polio (OPV) 3',
             'Polio (IPV)', 'DTP+Hib+HepB (pentavalent) 1', 'DTP+Hib+HepB (pentavalent) 2',
-            'DTP+Hib+HepB (pentavalent) 3']
+            'DTP+Hib+HepB (pentavalent) 3', 'DTP, TD, Td or TT booster', 'Measles 0', 'Measles 1',
+            'Measles 2', 'MMR 0', 'MMR 1', 'MMR 2', 'PCV 1', 'PCV 2', 'PCV 3', 'PCV booster']
     categoryOptionsList = ['', '0-11m', '12-59m', '5-14y']
     
     for table in dfs:
@@ -113,7 +136,7 @@ def set_first_row_as_header(df):
     df.columns = df.iloc[0]  
     df = df.iloc[1:]  
     df.reset_index(drop=True, inplace=True)  
-    print(df)
+    # print(df)
     return df
 
 @st.cache_data
@@ -136,6 +159,14 @@ def get_tabular_content_wrapper(_doctr_ocr, img, confidence_lookup_dict):
 def get_sheet_type_wrapper(result):
     return ocr_functions.get_sheet_type(result)
 
+@st.cache_data
+def get_data_sets(data_set_uids):
+    return dhis2.getDataSets(data_set_uids)
+
+@st.cache_data
+def get_org_unit_children(org_unit_id):
+    return dhis2.getOrgUnitChildren(org_unit_id)
+
 @st.cache_resource
 def create_ocr():
     """
@@ -144,6 +175,62 @@ def create_ocr():
     ocr_model = ocr_predictor(det_arch='db_resnet50', reco_arch='crnn_vgg16_bn', pretrained=True)
     doctr_ocr = DocTR(detect_language=False)
     return ocr_model, doctr_ocr
+
+@st.cache_data
+def correct_image_orientation(image_path):
+    """
+    Corrects the orientation of an image based on its EXIF data.
+    Parameters:
+    image_path (str): The path to the image file.
+    Returns:
+    PIL.Image.Image: The image with corrected orientation.
+    """
+    image = PILImage.open(image_path)
+    orientation = None
+    try:
+        for orientation in ExifTags.TAGS.keys():
+            if ExifTags.TAGS[orientation] == 'Orientation':
+                break
+        exif = dict(image._getexif().items())
+        if exif.get(orientation) == 3:
+            image = image.rotate(180, expand=True)
+        elif exif.get(orientation) == 6:
+            image = image.rotate(270, expand=True)
+        elif exif.get(orientation) == 8:
+            image = image.rotate(90, expand=True)
+    except (AttributeError, KeyError, IndexError):
+        pass
+    return image
+
+def week1_start_ordinal(year):
+    jan1 = date(year, 1, 1)
+    jan1_ordinal = jan1.toordinal()
+    jan1_weekday = jan1.weekday()
+    week1_start_ordinal = jan1_ordinal - ((jan1_weekday + 1) % 7)
+    return week1_start_ordinal
+
+def week_from_date(date_object):
+    date_ordinal = date_object.toordinal()
+    year = date_object.year
+    week = ((date_ordinal - week1_start_ordinal(year)) // 7) + 1
+    if week >= 52:
+        if date_ordinal >= week1_start_ordinal(year + 1):
+            year += 1
+            week = 1
+    return year, week
+
+def get_period():
+    year, week = week_from_date(period_start)
+    return PERIOD_TYPES[period_type].format(
+        year = year,
+        day = period_start.day,
+        month = period_start.month,
+        week = week
+        )
+    
+
+def create_server():
+    dhis2.configure_DHIS2_server()
 
 # Set the page layout to centered
 # st.set_page_config(layout="wide")
@@ -162,10 +249,34 @@ tally_sheet = st.file_uploader("Please upload one or more images of a tally shee
 # Displaying images so the user can see them
 with st.expander("Show Images"):
     for sheet in tally_sheet:
-        st.image(sheet)
+        rotated_image = correct_image_orientation(sheet)
+        st.image(rotated_image)
 
 # OCR Model
 ocr_model, doctr_ocr = create_ocr()
+create_server()
+
+# Hardcoded Periods, probably won't update but can get them through API
+PERIOD_TYPES = {
+    "Daily": "{year}{month}{day}",
+    "Weekly": "{year}W{week}",
+    "WeeklyWednesday": "{year}WedW{week}",
+    "WeeklyThursday": "{year}ThuW{week}",
+    "WeeklySaturday": "{year}SatW{week}",
+    "WeeklySunday": "{year}SunW{week}",
+    "BiWeekly": "{year}Bi{week}",
+    "Monthly": "{year}{month}",
+    "BiMonthly": "{year}{month}B",
+    "Quarterly": "{year}{quarter_number}",
+    "SixMonthly": "{year}{semiyear_number}",
+    "SixMonthlyApril": "{year}April{semiyear_number}",
+    "SixMonthlyNovember": "{year}Nov{semiyear_number}",
+    "Yearly": "{year}",
+    "FinancialApril": "{year}April",
+    "FinancialJuly": "{year}July",
+    "FinancialOct": "{year}Oct",
+    "FinancialNov": "{year}Nov",
+}
 
 # Once images are uploaded
 if len(tally_sheet) > 0:    
@@ -197,40 +308,67 @@ if len(tally_sheet) > 0:
     
     # Get all UIDs corresponding to the text field value 
     if org_unit:
-        org_unit_options = dhis2_all_UIDs("organisationUnits", [org_unit], **st.secrets.dhis2_credentials)
+        org_unit_options = dhis2_all_UIDs("organisationUnits", [org_unit])
         org_unit_dropdown = st.selectbox(
             "Searched Organizations",
-            [""]+[id[0] for id in org_unit_options],
+            [id[0] for id in org_unit_options],
             index=None
         )
+    
+    # Get org unit children    
+    if org_unit_dropdown is not None:
+        org_unit_id = [id[1] for id in org_unit_options if id[0] == org_unit_dropdown][0]
+        org_unit_children_options = get_org_unit_children(org_unit_id)
+        org_unit_children_dropdown = st.selectbox(
+            "Organization Children",
+            sorted([id[0] for id in org_unit_children_options]),
+            index=None
+        )
+        
+        if org_unit_children_dropdown is not None:
+            
+            org_unit_child_id = [id[2] for id in org_unit_children_options if id[0] == org_unit_children_dropdown][0]
+            data_set_ids = [id[1] for id in org_unit_children_options if id[0] == org_unit_children_dropdown][0]
+            data_set_options = get_data_sets(data_set_ids)
+            data_set = st.selectbox(
+                "Data Set",
+                sorted([id[0] for id in data_set_options]),
+                index=None
+            )
+            
+            if data_set is not None:
+                data_set_selected_id = [id[1] for id in data_set_options if id[0] == data_set][0]
+                period_type = [id[2] for id in data_set_options if id[0] == data_set][0]
+                st.write("Period Type\: " + period_type)
 
     # Same as org_unit
-    if form_type[0]:
-        data_set = st.text_input("Data Set", value=form_type[0])
-    else:
-        data_set = st.text_input("Data Set", placeholder="Search data set name")
+    # if form_type[0]:
+    #     data_set = st.text_input("Data Set", value=form_type[0])
+    # else:
+    #     data_set = st.text_input("Data Set", placeholder="Search data set name")
 
-    if data_set:            
-        data_set_options = dhis2_all_UIDs("dataSets", [data_set], **st.secrets.dhis2_credentials)
-        data_set_dropdown = st.selectbox(
-            "Searched Datasets",
-            [id[0] for id in data_set_options],
-            index=None
-        )
+    # if data_set:            
+    #     data_set_options = dhis2_all_UIDs("dataSets", [data_set])
+    #     data_set_dropdown = st.selectbox(
+    #         "Searched Datasets",
+    #         [id[0] for id in data_set_options],
+    #         index=None
+    #     )
 
     # Initialize with period values recognized from tally sheet or entered by user    
+    
     if form_type[2]:
         if form_type[2][0]:    
             period_start = st.date_input("Period Start Date", format="YYYY-MM-DD", value=form_type[2][0])
         else:
             period_start = st.date_input("Period Start Date", format="YYYY-MM-DD") 
-        if form_type[2][1]:    
-            period_end = st.date_input("Period End Date", format="YYYY-MM-DD", value=form_type[2][1])
-        else:
-            period_end = st.date_input("Period End Date", format="YYYY-MM-DD")        
+        # if form_type[2][1]:    
+        #     period_end = st.date_input("Period End Date", format="YYYY-MM-DD", value=form_type[2][1])
+        # else:
+        #     period_end = st.date_input("Period End Date", format="YYYY-MM-DD")        
     else:
         period_start = st.date_input("Period Start Date", format="YYYY-MM-DD")
-        period_end = st.date_input("Period End Date", format="YYYY-MM-DD")
+        # period_end = st.date_input("Period End Date", format="YYYY-MM-DD")
 
 
     # Populate streamlit with data recognized from tally sheets
@@ -242,16 +380,12 @@ if len(tally_sheet) > 0:
             img = Image(src=sheet)
             table_df, confidence_df = get_tabular_content_wrapper(doctr_ocr, img, confidence_lookup_dict)
             table_dfs += table_df
-            
-            # Change this line of code to docTR ocr function
-            # for id, table in enumerate(table_dfs):
-            #     table_dfs[id] = set_first_row_as_header(table)
 
             # Store table data in session state
             if 'table_dfs' not in st.session_state:
                 st.session_state.table_dfs = table_dfs
 
-            print(table_dfs)
+            # print(table_dfs)
 
             # Displaying the editable information
             for i, df in enumerate(st.session_state.table_dfs):
@@ -290,16 +424,51 @@ if len(tally_sheet) > 0:
             # # Download JSON, will eventually run the submission
             # st.download_button(
             #     label="Download data as JSON",
-            #     data=convert_df(edited_dfs),
+            #     data=convert_df(table_dfs),
             #     file_name="results.json",
             #     mime="application/json"
             # )
+            if 'data_payload' not in st.session_state:
+                st.session_state.data_payload = None
 
+            configure_DHIS2_server("settings.ini")
             # Generate and display key-value pairs
-            # if st.button("Generate Key-Value Pairs"):
-            #     final_dfs = st.session_state.table_dfs
-            #     key_value_pairs = []
-            #     for df in final_dfs:
-            #         key_value_pairs.extend(ocr_functions.generate_key_value_pairs(df))
-            #     st.write("### Key-Value Pairs ###")
-            #     st.json(key_value_pairs)
+            if st.button("Generate Key-Value Pairs"):
+                # Set first row as header of df
+                final_dfs = copy.deepcopy(st.session_state.table_dfs)
+                for id, table in enumerate(final_dfs):
+                    final_dfs[id] = set_first_row_as_header(table)
+                print(final_dfs)
+                key_value_pairs = []
+                for df in final_dfs:
+                    key_value_pairs.extend(ocr_functions.generate_key_value_pairs(df))
+                st.write("Completed")
+                
+                st.session_state.data_payload = json_export(key_value_pairs)
+                print(st.session_state.data_payload)
+                
+            if st.button("Upload to DHIS2"):
+                if st.session_state.data_payload==None:
+                    raise ValueError("Data empty - generate key value pairs first")
+                else:
+                    URL = ''
+                    ############# write this in OCR functions
+                    data_value_set_url = f'{URL}/api/dataValueSets?dryRun=true'
+                    # Send the POST request with the data payload
+                    response = requests.post(
+                        data_value_set_url,
+                        auth=('', ''),
+                        headers={'Content-Type': 'application/json'},
+                        data=st.session_state.data_payload
+                    )
+
+                    # # Check the response status
+                    # if response.status_code == 200:
+                    #     print('Data entry dry run successful')
+                    #     print('Response data:')
+                    #     print(response.json())
+                    # else:
+                    #     print(f'Failed to enter data, status code: {response.status_code}')
+                    #     print('Response data:')
+                    #     print(response.json())
+                    st.write("Completed")

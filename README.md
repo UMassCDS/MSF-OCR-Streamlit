@@ -12,13 +12,13 @@ Make sure port 8501 is available, as it is the default for Streamlit.
 
 ### Login Information
 
-In the .streamlit directory:
-1. Create a file called `secrets.toml`
+In the main directory:
+1. Create a file called `settings.ini`
 2. Paste in the following text: 
 ```
-[dhis2_credentials]
-dhis2_username = '<your username here>'
-dhis2_password = '<your password here>'
-DHIS2_Test_Server_URL = '<test server url>'
+[DHIS2Server]
+username = '<your username here>'
+password = '<your password here>'
+server_url = '<test server url>'
 ```
 3. Replace the bracketed text with your login information and the test server URL.
