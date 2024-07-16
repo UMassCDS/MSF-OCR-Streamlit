@@ -22,5 +22,5 @@ jobs:
       - name: Build and push images
         run: |
           docker buildx build --push \
-            --tag umasscds/MSF-OCR-Streamlit:${{ github.ref_name }} \
+            --tag umasscds/msf-ocr-streamlit:${{ github.ref_name }} \
             --platform linux/amd64,linux/arm64 .
