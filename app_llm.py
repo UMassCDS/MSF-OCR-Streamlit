@@ -6,47 +6,68 @@ from msfocr.data.data_upload_DHIS2 import configure_DHIS2_server
 from msfocr.data import data_upload_DHIS2 as dhis2
 from LLM.ocr_functions import *
 
-
 @st.cache_data
 def dhis2_all_UIDs(item_type, search_items):
     """
-    Gets all fields similar to search_items from the metadata
+    Gets all fields similar to search_items from the metadata.
+
+    Usage:
+    uids = dhis2_all_UIDs("dataElements", ["Malaria", "HIV"])
+
     :param item_type: Defines the type of metadata (dataset, organisation unit, data element) to search
-           search_items: A list of text to search
-           dhis2_username, dhis2_password, DHIS2_Test_Server_URL: DHIS2 login credentials
-    :return A list of all (name,id) pairs of fields that match the search words
+    :param search_items: A list of text to search
+    :return: A list of all (name,id) pairs of fields that match the search words
     """
     if search_items == "" or search_items is None:
         return []
     else:
         return dhis2.getAllUIDs(item_type, search_items)
 
-
 def create_server():
+    """
+    Configures the DHIS2 server connection.
+
+    Usage:
+    create_server()
+    """
     dhis2.configure_DHIS2_server()
-
-
-# Function to set the first row as header
-def set_first_row_as_header(df):
-    """
-    Sets the first row in the recognized table (ideally the header information for each column) as the table header
-    :param Dataframe
-    :return Dataframe after correction
-    """
-    df.columns = df.iloc[0]
-    df = df.iloc[1:]
-    df.reset_index(drop=True, inplace=True)
-    return df
 
 @st.cache_data
 def get_data_sets(data_set_uids):
+    """
+    Retrieves data sets based on their UIDs.
+
+    Usage:
+    data_sets = get_data_sets(["uid1", "uid2"])
+
+    :param data_set_uids: List of data set UIDs
+    :return: List of data sets
+    """
     return dhis2.getDataSets(data_set_uids)
 
 @st.cache_data
 def get_org_unit_children(org_unit_id):
+    """
+    Retrieves children of an organization unit.
+
+    Usage:
+    children = get_org_unit_children("parent_uid")
+
+    :param org_unit_id: UID of the parent organization unit
+    :return: List of child organization units
+    """
     return dhis2.getOrgUnitChildren(org_unit_id)
 
 def week1_start_ordinal(year):
+    """
+    Calculates the ordinal date of the start of the first week of the year.
+
+    Usage:
+    start_ordinal = week1_start_ordinal(2023)
+
+    :param year: The year to calculate for
+    :return: Ordinal date of the start of the first week
+    """
     jan1 = date(year, 1, 1)
     jan1_ordinal = jan1.toordinal()
     jan1_weekday = jan1.weekday()
@@ -54,6 +75,15 @@ def week1_start_ordinal(year):
     return week1_start_ordinal
 
 def week_from_date(date_object):
+    """
+    Calculates the week number from a given date.
+
+    Usage:
+    year, week = week_from_date(date(2023, 5, 15))
+
+    :param date_object: Date to calculate the week for
+    :return: Tuple of (year, week number)
+    """
     date_ordinal = date_object.toordinal()
     year = date_object.year
     week = ((date_ordinal - week1_start_ordinal(year)) // 7) + 1
@@ -63,8 +93,15 @@ def week_from_date(date_object):
             week = 1
     return year, week
 
-
 def get_period():
+    """
+    Generates the period string based on the selected period type and start date.
+
+    Usage:
+    period_string = get_period()
+
+    :return: Formatted period string
+    """
     year, week = week_from_date(period_start)
     return PERIOD_TYPES[period_type].format(
         year=year,
@@ -73,12 +110,15 @@ def get_period():
         week=week
     )
 
-
 def json_export(kv_pairs):
     """
-    Converts tabular data recognized into json format required to upload data into DHIS2
-    :param Data as dataframes
-    :return Data in json format with form identification information
+    Converts tabular data into JSON format required for DHIS2 data upload.
+
+    Usage:
+    json_data = json_export(key_value_pairs)
+
+    :param kv_pairs: List of key-value pairs representing the data
+    :return: JSON string ready for DHIS2 upload
     """
     json_export = {}
     if org_unit_dropdown == None:
@@ -221,7 +261,7 @@ if len(tally_sheet) > 0:
     # Populate streamlit with data recognized from tally sheets
     table_names, table_dfs = [], []
     for result in results:
-        names, df, type_info = parse_table_data(result)
+        names, df = parse_table_data(result)
         table_names.extend(names)
         table_dfs.extend(df)
 
