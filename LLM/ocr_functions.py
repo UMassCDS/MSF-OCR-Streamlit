@@ -6,6 +6,7 @@ from openai import OpenAI
 from msfocr.data import data_upload_DHIS2 as dhis2
 import configparser
 
+OPENAI_API_KEY = None
 
 def configure_openai(config_path="settings.ini"):
     """
