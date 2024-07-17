@@ -98,13 +98,18 @@ def extract_text_from_image(image_path):
         messages=[
             {"role": "user", "content": [
                 {"type": "text",
-                 "text": "Identify all tables and table structure"
-                         "Then hardcore the table structure with columns and rows."
-                         "Extract the number from the tables, fill in the table."
-                         "table name is at the left top of table, which should be included in is json"
-                         "Make columns use headers field in json file, and data use data field."
-                         "The non-table data should be in key-value pairs, including all non-table data."
-                         "Respond directly in JSON format without any introduction, explanation, or additional text."
+                 "text": "Analyze this image as a completely new task. "
+                         "Identify and parse all tables and non-table data. "
+                         "For each table, carefully examine and transcribe its name from the image, typically located at the top left of the table. "
+                         "If the table name is unclear or missing, label it 'Table X' where X is a sequential number. "
+                         "Do not use any previously identified table names. "
+                         "Apply image corrections if needed for better text recognition. "
+                         "Construct each table with its newly identified name, columns, and rows, extracting all visible numbers. "
+                         "Format JSON with two main objects: 1) 'tables': an array of table objects {'table_name': '...', 'headers': [...], 'data': [[...], ...]}, 2) 'non_table_data': an object with key-value pairs for all non-table information. "
+                         "Respond only with the JSON: {'tables': [...], 'non_table_data': {...}}. "
+                         "No explanations. "
+                         "Treat this as an entirely new image with no relation to any previous tasks."
+
                  },
                 {"type": "image_url", "image_url": {
                     "url": f"data:image/png;base64,{base64_image}"}
