@@ -23,7 +23,7 @@ RUN apt-get update && apt-get install -y \
 COPY . .
 
 # Install pip requirements
-RUN pip install --upgrade pip && pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Streamlit listen to this container port
 EXPOSE 8501
