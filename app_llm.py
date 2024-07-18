@@ -3,8 +3,8 @@ import streamlit as st
 import copy
 import requests
 from msfocr.data.data_upload_DHIS2 import configure_DHIS2_server
-from msfocr.data import data_upload_DHIS2 as dhis2
 from LLM.ocr_functions import *
+from msfocr.docTR import ocr_functions
 
 @st.cache_data
 def dhis2_all_UIDs(item_type, search_items):
@@ -206,6 +206,7 @@ if len(tally_sheet) > 0:
 
     org_unit_dropdown = None
     org_unit_options = None
+    data_set_selected_id =None
 
     # Get all UIDs corresponding to the text field value
     if org_unit:
@@ -249,14 +250,9 @@ if len(tally_sheet) > 0:
             period_start = st.date_input("Period Start Date", format="YYYY-MM-DD", value=start_date)
         else:
             period_start = st.date_input("Period Start Date", format="YYYY-MM-DD")
-        if end_date:
-            period_end = st.date_input("Period End Date", format="YYYY-MM-DD", value=start_date)
-        else:
-            period_end = st.date_input("Period End Date", format="YYYY-MM-DD")
-
     else:
         period_start = st.date_input("Period Start Date", format="YYYY-MM-DD")
-        period_end = st.date_input("Period End Date", format="YYYY-MM-DD")
+
 
     # Populate streamlit with data recognized from tally sheets
     table_names, table_dfs = [], []
@@ -300,15 +296,16 @@ if len(tally_sheet) > 0:
         # Generate and display key-value pairs
         if st.button("Generate Key-Value Pairs"):
             # Set first row as header of df
-            final_dfs = copy.deepcopy(st.session_state.table_dfs)
-            print(final_dfs)
-            key_value_pairs = []
-            for df in final_dfs:
-                key_value_pairs.extend(generate_key_value_pairs(df))
-            st.write("Completed")
+            if data_set_selected_id:
+                final_dfs = copy.deepcopy(st.session_state.table_dfs)
+                print(final_dfs)
+                key_value_pairs = []
+                for df in final_dfs:
+                    key_value_pairs.extend(ocr_functions.generate_key_value_pairs(df, data_set_selected_id))
+                st.write("Completed")
 
-            st.session_state.data_payload = json_export(key_value_pairs)
-            print(st.session_state.data_payload)
+                st.session_state.data_payload = json_export(key_value_pairs)
+                print(st.session_state.data_payload)
 
         if st.button("Upload to DHIS2"):
             if st.session_state.data_payload == None:
