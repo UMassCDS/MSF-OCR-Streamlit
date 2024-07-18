@@ -2,7 +2,7 @@ from datetime import date
 import streamlit as st
 import copy
 import requests
-from msfocr.data.data_upload_DHIS2 import configure_DHIS2_server
+from msfocr.data.data_upload_DHIS2 import configure_DHIS2_server, getCategoryUIDs
 from LLM.ocr_functions import *
 from msfocr.docTR import ocr_functions
 
@@ -57,6 +57,11 @@ def get_org_unit_children(org_unit_id):
     :return: List of child organization units
     """
     return dhis2.getOrgUnitChildren(org_unit_id)
+
+@st.cache_data
+def getCategoryUIDs_wrapper(datasetid):
+    _,_, categoryOptionsList, dataElement_list = getCategoryUIDs(datasetid)
+    return categoryOptionsList, dataElement_list
 
 def week1_start_ordinal(year):
     """
@@ -131,6 +136,60 @@ def json_export(kv_pairs):
     json_export["dataValues"] = kv_pairs
     return json.dumps(json_export)
 
+def correct_field_names(dfs):
+    """
+    Corrects the text data in tables by replacing with closest match among the hardcoded fieldnames
+    :param Data as dataframes
+    :return Corrected data as dataframes
+    """
+    categoryOptionsList, dataElement_list = getCategoryUIDs_wrapper(data_set_selected_id)
+    # dataElement_list = ['', 'Paed (0-59m) vacc target population', 'BCG', 'HepB (birth dose, within 24h)',
+    #         'HepB (birth dose, 24h or later)',
+    #         'Polio (OPV) 0 (birth dose)', 'Polio (OPV) 1 (from 6 wks)', 'Polio (OPV) 2', 'Polio (OPV) 3',
+    #         'Polio (IPV)', 'DTP+Hib+HepB (pentavalent) 1', 'DTP+Hib+HepB (pentavalent) 2',
+    #         'DTP+Hib+HepB (pentavalent) 3', 'DTP, TD, Td or TT booster', 'Measles 0', 'Measles 1',
+    #         'Measles 2', 'MMR 0', 'MMR 1', 'MMR 2', 'PCV 1', 'PCV 2', 'PCV 3', 'PCV booster']
+    # categoryOptionsList = ['', '0-11m', '12-59m', '5-14y']
+    
+    for table in dfs:
+        for row in range(table.shape[0]):
+            max_similarity_dataElement = 0
+            dataElement = ""
+            text = table.iloc[row,0]
+            if text is not None:
+                for name in dataElement_list:
+                    sim = ocr_functions.letter_by_letter_similarity(text, name)
+                    if max_similarity_dataElement < sim:
+                        max_similarity_dataElement = sim
+                        dataElement = name
+                table.iloc[row,0] = dataElement
+
+    for table in dfs:
+        for id,col in enumerate(table.columns):
+            max_similarity_catOpt = 0
+            catOpt = ""
+            text = table.iloc[0,id]
+            if text is not None:
+                for name in categoryOptionsList:
+                    sim = ocr_functions.letter_by_letter_similarity(text, name)
+                    if max_similarity_catOpt < sim:
+                        max_similarity_catOpt = sim
+                        catOpt = name
+                table.iloc[0,id] = catOpt
+    return dfs        
+
+# Function to set the first row as header
+def set_first_row_as_header(df):
+    """
+    Sets the first row in the recognized table (ideally the header information for each column) as the table header
+    :param Dataframe
+    :return Dataframe after correction
+    """
+    df.columns = df.iloc[0]  
+    df = df.iloc[1:]  
+    df.reset_index(drop=True, inplace=True)  
+    # print(df)
+    return df
 
 # Initiation
 if 'upload_key' not in st.session_state:
@@ -273,32 +332,45 @@ if len(tally_sheet) > 0:
 
             with col1:
                 # Display tables as editable fields
-                st.session_state.table_dfs[i] = st.data_editor(df, num_rows="dynamic", key=f"editor_{i}")
+                table_dfs[i] = st.data_editor(df, num_rows="dynamic", key=f"editor_{i}")
 
             with col2:
                 # Add column functionality
                 new_col_name = st.text_input(f"New column name", key=f"new_col_{i}")
                 if st.button(f"Add Column", key=f"add_col_{i}"):
                     if new_col_name:
-                        st.session_state.table_dfs[i][new_col_name] = None
+                        table_dfs[i][new_col_name] = None
 
                 # Delete column functionality
                 if not st.session_state.table_dfs[i].empty:
                     col_to_delete = st.selectbox(f"Column to delete", st.session_state.table_dfs[i].columns,
                                                  key=f"del_col_{i}")
                     if st.button(f"Delete Column", key=f"delete_col_{i}"):
-                        st.session_state.table_dfs[i] = st.session_state.table_dfs[i].drop(columns=[col_to_delete])
+                        table_dfs[i] = st.session_state.table_dfs[i].drop(columns=[col_to_delete])
 
-            if 'data_payload' not in st.session_state:
-                st.session_state.data_payload = None
+        # Button that when clicked corrects the row and column indices of table with best match 
+        if st.button(f"Correct field names", key=f"correct_names"):
+            table_dfs = correct_field_names(table_dfs)   
+
+        # Rerun the code to display any edits made by user
+        for idx, table in enumerate(table_dfs):
+            if not table_dfs[idx].equals(st.session_state.table_dfs[idx]):
+                st.session_state.table_dfs = table_dfs
+                st.rerun()
+
+        if 'data_payload' not in st.session_state:
+            st.session_state.data_payload = None
 
         configure_DHIS2_server("settings.ini")
+
         # Generate and display key-value pairs
         if st.button("Generate Key-Value Pairs"):
-            # Set first row as header of df
             if data_set_selected_id:
                 final_dfs = copy.deepcopy(st.session_state.table_dfs)
+                for id, table in enumerate(final_dfs):
+                    final_dfs[id] = set_first_row_as_header(table)
                 print(final_dfs)
+
                 key_value_pairs = []
                 for df in final_dfs:
                     key_value_pairs.extend(ocr_functions.generate_key_value_pairs(df, data_set_selected_id))
