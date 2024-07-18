@@ -147,7 +147,8 @@ if "initialised" not in st.session_state:
 
 # Initial Display
 st.set_page_config("Doctors Without Borders Data Entry")
-st.title("Doctors Without Borders Image Recognition Data Entry")
+# st.title("Doctors Without Borders Image Recognition Data Entry")
+st.markdown("<h1 style='text-align: center; color: white;'>Doctors Without Borders Image Recognition Data Entry</h1>", unsafe_allow_html=True)
 
 # Hardcoded Periods, probably won't update but can get them through API
 PERIOD_TYPES = {
@@ -193,22 +194,22 @@ if st.session_state['password_correct']:
     holder = st.empty()
     
     holder.write("### File Upload ###")
-    tally_sheet = holder.file_uploader("Please upload one or more images of a tally sheet", type=["png", "jpg", "jpeg"],
+    tally_sheet = holder.file_uploader("Please upload one image of a tally sheet.", type=["png", "jpg", "jpeg"],
                                 accept_multiple_files=True,
                                 key=st.session_state['upload_key'])
-
-    # Displaying images so the user can see them
-    with st.expander("Show Images"):
-        for sheet in tally_sheet:
-            image = correct_image_orientation(sheet)
-            st.image(image)
 
     # Once images are uploaded
     if len(tally_sheet) > 0:
         
         holder.empty()
+        
+        # Displaying images so the user can see them
+        with st.expander("Show Images"):
+            for sheet in tally_sheet:
+                image = correct_image_orientation(sheet)
+                st.image(image)
 
-        if st.button("Clear Form") and 'upload_key' in st.session_state.keys():
+        if st.button("Clear Form", type='primary') and 'upload_key' in st.session_state.keys():
             st.session_state.upload_key += 1
             if 'table_dfs' in st.session_state:
                 del st.session_state['table_dfs']
@@ -261,7 +262,7 @@ if st.session_state['password_correct']:
                         org_unit_id = [id[1] for id in org_unit_options if id[0] == org_unit_dropdown][0]
                         org_unit_children_options = get_org_unit_children(org_unit_id)
                         org_unit_children_dropdown = st.selectbox(
-                            "Organization Children",
+                            "Tally Sheet Type",
                             sorted([id[0] for id in org_unit_children_options]),
                             index=None
                         )
@@ -311,30 +312,36 @@ if st.session_state['password_correct']:
 
                 with col1:
                     # Display tables as editable fields
-                    st.session_state.table_dfs[i] = st.data_editor(df, num_rows="dynamic", key=f"editor_{i}")
+                    table_dfs[i] = st.data_editor(df, num_rows="dynamic", key=f"editor_{i}", use_container_width=True)
 
                 with col2:
                     # Add column functionality
                     # new_col_name = st.text_input(f"New column name", key=f"new_col_{i}")
                     if st.button(f"Add Column", key=f"add_col_{i}"):
-                        st.session_state.table_dfs[i][st.session_state.table_dfs[i].columns[-1] + 1] = None
+                        table_dfs[i][int(table_dfs[i].columns[-1]) + 1] = None
 
                     # Delete column functionality
                     if not st.session_state.table_dfs[i].empty:
                         col_to_delete = st.selectbox(f"Column to delete", st.session_state.table_dfs[i].columns,
                                                     key=f"del_col_{i}")
                         if st.button(f"Delete Column", key=f"delete_col_{i}"):
-                            st.session_state.table_dfs[i] = st.session_state.table_dfs[i].drop(columns=[col_to_delete])
-
-            if st.button(f"Correct field names", key=f"correct_names"):
-                table_dfs = correct_field_names(table_dfs)
+                            table_dfs[i] = table_dfs[i].drop(columns=[col_to_delete])
+            
+            # if st.button(f"Correct field names", key=f"correct_names"):
+            #     table_dfs = correct_field_names(table_dfs)
+                
+            # Rerun the code to display any edits made by user
+            for idx, table in enumerate(table_dfs):
+                if not table_dfs[idx].equals(st.session_state.table_dfs[idx]):
+                    st.session_state.table_dfs = table_dfs
+                    st.rerun()
             
             if 'data_payload' not in st.session_state:
                 st.session_state.data_payload = None
 
             configure_DHIS2_server("settings.ini")
             # Generate and display key-value pairs
-            if st.button("Upload to DHIS2"):
+            if st.button("Upload to DHIS2", type="primary"):
                 # Set first row as header of df
                 if data_set_selected_id:
                     with st.spinner("Uploading in progress, please wait..."):
@@ -365,4 +372,6 @@ if st.session_state['password_correct']:
                         print('Response data:')
                         print(response.json())
                         st.error("Submission failed. Please try again or notify a technician.")
+                else:
+                    st.error("Please finish submitting organization unit and data set.")
 
