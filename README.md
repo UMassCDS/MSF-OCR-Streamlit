@@ -20,5 +20,8 @@ In the main directory:
 username = '<your username here>'
 password = '<your password here>'
 server_url = '<test server url>'
+
+[OpenAI]
+api_key=<your api key here>
 ```
 3. Replace the bracketed text with your login information and the test server URL.
