@@ -60,7 +60,7 @@ def get_org_unit_children(org_unit_id):
 
 @st.cache_data
 def getCategoryUIDs_wrapper(datasetid):
-    _,_, categoryOptionsList, dataElement_list = getCategoryUIDs(datasetid)
+    _,_,_,categoryOptionsList, dataElement_list = getCategoryUIDs(datasetid)
     return categoryOptionsList, dataElement_list
 
 def week1_start_ordinal(year):
@@ -143,13 +143,7 @@ def correct_field_names(dfs):
     :return Corrected data as dataframes
     """
     categoryOptionsList, dataElement_list = getCategoryUIDs_wrapper(data_set_selected_id)
-    # dataElement_list = ['', 'Paed (0-59m) vacc target population', 'BCG', 'HepB (birth dose, within 24h)',
-    #         'HepB (birth dose, 24h or later)',
-    #         'Polio (OPV) 0 (birth dose)', 'Polio (OPV) 1 (from 6 wks)', 'Polio (OPV) 2', 'Polio (OPV) 3',
-    #         'Polio (IPV)', 'DTP+Hib+HepB (pentavalent) 1', 'DTP+Hib+HepB (pentavalent) 2',
-    #         'DTP+Hib+HepB (pentavalent) 3', 'DTP, TD, Td or TT booster', 'Measles 0', 'Measles 1',
-    #         'Measles 2', 'MMR 0', 'MMR 1', 'MMR 2', 'PCV 1', 'PCV 2', 'PCV 3', 'PCV booster']
-    # categoryOptionsList = ['', '0-11m', '12-59m', '5-14y']
+    print(categoryOptionsList, dataElement_list)
     
     for table in dfs:
         for row in range(table.shape[0]):
@@ -238,7 +232,7 @@ if len(tally_sheet) > 0:
     if st.button("Clear Form") and 'upload_key' in st.session_state.keys():
         st.session_state.upload_key += 1
         if 'table_dfs' in st.session_state:
-            del st.session_state['table_dfs']
+            del st.session_state['table_dfs']    
         st.rerun()
 
     results = get_results(tally_sheet)
