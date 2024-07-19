@@ -399,37 +399,41 @@ if st.session_state['password_correct']:
             # Generate and display key-value pairs
             if st.button("Upload to DHIS2", type="primary"):
                 if data_set_selected_id:
-                    with st.spinner("Uploading in progress, please wait..."):
-                        final_dfs = copy.deepcopy(st.session_state.table_dfs)
-                        for id, table in enumerate(final_dfs):
-                            final_dfs[id] = set_first_row_as_header(table)
-                        print(final_dfs)
-    
-                        key_value_pairs = []
-                        for df in final_dfs:
-                            key_value_pairs.extend(ocr_functions.generate_key_value_pairs(df, data_set_selected_id))
+                    try: 
+                        with st.spinner("Uploading in progress, please wait..."):
+                            final_dfs = copy.deepcopy(st.session_state.table_dfs)
+                            for id, table in enumerate(final_dfs):
+                                final_dfs[id] = set_first_row_as_header(table)
+                            print(final_dfs)
+        
+                            key_value_pairs = []
+                            for df in final_dfs:
+                                key_value_pairs.extend(ocr_functions.generate_key_value_pairs(df, data_set_selected_id))
+                            
+                        st.session_state.data_payload = json_export(key_value_pairs)
+                        if st.session_state.data_payload is not None:
+                            data_value_set_url = f'{dhis2.DHIS2_SERVER_URL}/api/dataValueSets?dryRun=true'
+                            # Send the POST request with the data payload
+                            response = requests.post(
+                                data_value_set_url,
+                                auth=(dhis2.DHIS2_USERNAME, dhis2.DHIS2_PASSWORD),
+                                headers={'Content-Type': 'application/json'},
+                                data=st.session_state.data_payload
+                            )
 
-                    st.session_state.data_payload = json_export(key_value_pairs)
-                    if st.session_state.data_payload is not None:
-                        data_value_set_url = f'{dhis2.DHIS2_SERVER_URL}/api/dataValueSets?dryRun=true'
-                        # Send the POST request with the data payload
-                        response = requests.post(
-                            data_value_set_url,
-                            auth=(dhis2.DHIS2_USERNAME, dhis2.DHIS2_PASSWORD),
-                            headers={'Content-Type': 'application/json'},
-                            data=st.session_state.data_payload
-                        )
+                        # # Check the response status
+                        if response.status_code == 200:
+                            print('Response data:')
+                            print(response.json())
+                            st.success("Submitted!")
+                        else:
+                            print(f'Failed to enter data, status code: {response.status_code}')
+                            print('Response data:')
+                            print(response.json())
+                            st.error("Submission failed. Please try again or notify a technician.")
+                    except KeyError:
+                            st.warning("In the future this button will upload your form to DHIS2! We're still working on this feature.", icon="👷‍♀️")
 
-                    # # Check the response status
-                    if response.status_code == 200:
-                        print('Response data:')
-                        print(response.json())
-                        st.success("Submitted!")
-                    else:
-                        print(f'Failed to enter data, status code: {response.status_code}')
-                        print('Response data:')
-                        print(response.json())
-                        st.error("Submission failed. Please try again or notify a technician.")
                 else:
                     st.error("Please finish submitting organization unit and data set.")
 
