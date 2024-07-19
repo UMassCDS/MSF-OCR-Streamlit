@@ -380,8 +380,10 @@ if st.session_state['password_correct']:
                         if st.button(f"Delete Column", key=f"delete_col_{i}"):
                             table_dfs[i] = table_dfs[i].drop(columns=[col_to_delete])
             
-            if st.button(f"Correct field names", key=f"correct_names"):
-                 table_dfs = correct_field_names(table_dfs)
+            # This can normalize table headers to match DHIS2 using Levenstein distance or semantic search
+            # TODO: Currently there's only a small set of hard coded fields, which might look weird to the user, so it's left of for the demo
+            #if st.button(f"Correct field names", key=f"correct_names"):
+            #     table_dfs = correct_field_names(table_dfs)
                 
             # Rerun the code to display any edits made by user
             for idx, table in enumerate(table_dfs):
@@ -394,7 +396,7 @@ if st.session_state['password_correct']:
 
             configure_DHIS2_server("settings.ini")
     
-        # Generate and display key-value pairs
+            # Generate and display key-value pairs
             if st.button("Upload to DHIS2", type="primary"):
                 if data_set_selected_id:
                     with st.spinner("Uploading in progress, please wait..."):
