@@ -5,6 +5,7 @@ import requests
 from msfocr.data.data_upload_DHIS2 import configure_DHIS2_server, getCategoryUIDs
 from LLM.ocr_functions import *
 from msfocr.docTR import ocr_functions
+from datetime import datetime
 
 @st.cache_data
 def dhis2_all_UIDs(item_type, search_items):
@@ -57,6 +58,10 @@ def get_org_unit_children(org_unit_id):
     :return: List of child organization units
     """
     return dhis2.getOrgUnitChildren(org_unit_id)
+
+@st.cache_data(show_spinner=False)
+def get_results_wrapper(tally_sheet):
+    return get_results(tally_sheet)
 
 @st.cache_data
 def getCategoryUIDs_wrapper(datasetid):
@@ -126,10 +131,12 @@ def json_export(kv_pairs):
     :return: JSON string ready for DHIS2 upload
     """
     json_export = {}
-    if org_unit_dropdown == None:
-        raise ValueError("Please select organisation unit")
+    if org_unit_dropdown is None:
+        st.error("Key-value pairs not generated. Please select organisation unit.")
+        return None
     if data_set == "":
-        raise ValueError("Please select data set")
+        st.error("Key-value pairs not generated. Please select data set.")
+        return None
     json_export["dataSet"] = data_set_selected_id
     json_export["period"] = get_period()
     json_export["orgUnit"] = org_unit_child_id
@@ -186,23 +193,15 @@ def set_first_row_as_header(df):
     return df
 
 # Initiation
-if 'upload_key' not in st.session_state:
+if "initialised" not in st.session_state:
+    st.session_state['initialised'] = True
     st.session_state['upload_key'] = 1000
+    st.session_state['password_correct'] = False
 
 # Initial Display
-st.title("MSF OCR Tool")
-st.write("### File Upload ###")
-tally_sheet = st.file_uploader("Please upload one or more images of a tally sheet", type=["png", "jpg", "jpeg"],
-                               accept_multiple_files=True,
-                               key=st.session_state['upload_key'])
-
-# Displaying images so the user can see them
-with st.expander("Show Images"):
-    for sheet in tally_sheet:
-        image = correct_image_orientation(sheet)
-        st.image(image)
-
-create_server()
+st.set_page_config("Doctors Without Borders Data Entry")
+# st.title("Doctors Without Borders Image Recognition Data Entry")
+st.markdown("<h1 style='text-align: center; color: white;'>Doctors Without Borders Image Recognition Data Entry</h1>", unsafe_allow_html=True)
 
 # Hardcoded Periods, probably won't update but can get them through API
 PERIOD_TYPES = {
@@ -226,175 +225,209 @@ PERIOD_TYPES = {
     "FinancialNov": "{year}Nov",
 }
 
-# Once images are uploaded
-if len(tally_sheet) > 0:
+CORRECT_PASSWORD = "OCR_Test"
+placeholder = st.empty()
 
-    if st.button("Clear Form") and 'upload_key' in st.session_state.keys():
-        st.session_state.upload_key += 1
-        if 'table_dfs' in st.session_state:
-            del st.session_state['table_dfs']    
-        st.rerun()
-
-    results = get_results(tally_sheet)
-
-    # ***************************************
-    result = results[0]
-
-    # Initialize from JSON result
-    # dataSet = result.get('dataSet', None)
-    # orgUnit = result.get('Health Structure', None)
-    # start_date = result.get('Start Date', None)
-    # end_date = result.get('End Date', None)
-    dataSet = None
-    orgUnit = None
-    start_date = None
-    end_date = None
-
-    # Initialize org_unit with any recognized text from tally sheet
-    # Change the value when user edits the field
-    if orgUnit:
-        org_unit = st.text_input("Organization Unit", value=orgUnit)
-    else:
-        org_unit = st.text_input("Organization Unit", placeholder="Search organisation unit name")
-
-    org_unit_dropdown = None
-    org_unit_options = None
-    data_set_selected_id =None
-
-    # Get all UIDs corresponding to the text field value
-    if org_unit:
-        org_unit_options = dhis2_all_UIDs("organisationUnits", [org_unit])
-        org_unit_dropdown = st.selectbox(
-            "Searched Organizations",
-            [id[0] for id in org_unit_options],
-            index=None
-        )
-
-    # Get org unit children
-    if org_unit_dropdown is not None:
-        if org_unit_options:
-            org_unit_id = [id[1] for id in org_unit_options if id[0] == org_unit_dropdown][0]
-            org_unit_children_options = get_org_unit_children(org_unit_id)
-            org_unit_children_dropdown = st.selectbox(
-                "Organization Children",
-                sorted([id[0] for id in org_unit_children_options]),
-                index=None
-            )
-
-            if org_unit_children_dropdown is not None:
-
-                org_unit_child_id = [id[2] for id in org_unit_children_options if id[0] == org_unit_children_dropdown][0]
-                data_set_ids = [id[1] for id in org_unit_children_options if id[0] == org_unit_children_dropdown][0]
-                data_set_options = get_data_sets(data_set_ids)
-                data_set = st.selectbox(
-                    "Data Set",
-                    sorted([id[0] for id in data_set_options]),
-                    index=None
-                )
-
-                if data_set is not None:
-                    data_set_selected_id = [id[1] for id in data_set_options if id[0] == data_set][0]
-                    period_type = [id[2] for id in data_set_options if id[0] == data_set][0]
-                    st.write("Period Type\: " + period_type)
-
-    # Initialize with period values recognized from tally sheet or entered by user
-    if (start_date and end_date):
-        if start_date:
-            period_start = st.date_input("Period Start Date", format="YYYY-MM-DD", value=start_date)
-        else:
-            period_start = st.date_input("Period Start Date", format="YYYY-MM-DD")
-    else:
-        period_start = st.date_input("Period Start Date", format="YYYY-MM-DD")
-
-
-    # Populate streamlit with data recognized from tally sheets
-    table_names, table_dfs = [], []
-    for result in results:
-        names, df = parse_table_data(result)
-        table_names.extend(names)
-        table_dfs.extend(df)
-
-        if 'table_names' not in st.session_state:
-            st.session_state.table_names = table_names
-        if 'table_dfs' not in st.session_state:
-            st.session_state.table_dfs = table_dfs
-
-        # Displaying the editable information
-        for i, (table_name, df) in enumerate(zip(st.session_state.table_names, st.session_state.table_dfs)):
-            st.write(f"{table_name}")
-            col1, col2 = st.columns([4, 1])
-
-            with col1:
-                # Display tables as editable fields
-                table_dfs[i] = st.data_editor(df, num_rows="dynamic", key=f"editor_{i}")
-
-            with col2:
-                # Add column functionality
-                new_col_name = st.text_input(f"New column name", key=f"new_col_{i}")
-                if st.button(f"Add Column", key=f"add_col_{i}"):
-                    if new_col_name:
-                        table_dfs[i][new_col_name] = None
-
-                # Delete column functionality
-                if not st.session_state.table_dfs[i].empty:
-                    col_to_delete = st.selectbox(f"Column to delete", st.session_state.table_dfs[i].columns,
-                                                 key=f"del_col_{i}")
-                    if st.button(f"Delete Column", key=f"delete_col_{i}"):
-                        table_dfs[i] = st.session_state.table_dfs[i].drop(columns=[col_to_delete])
-
-        # Button that when clicked corrects the row and column indices of table with best match 
-        if st.button(f"Correct field names", key=f"correct_names"):
-            table_dfs = correct_field_names(table_dfs)   
-
-        # Rerun the code to display any edits made by user
-        for idx, table in enumerate(table_dfs):
-            if not table_dfs[idx].equals(st.session_state.table_dfs[idx]):
-                st.session_state.table_dfs = table_dfs
-                st.rerun()
-
-        if 'data_payload' not in st.session_state:
-            st.session_state.data_payload = None
-
-        configure_DHIS2_server("settings.ini")
-
-        # Generate and display key-value pairs
-        if st.button("Generate Key-Value Pairs"):
-            if data_set_selected_id:
-                final_dfs = copy.deepcopy(st.session_state.table_dfs)
-                for id, table in enumerate(final_dfs):
-                    final_dfs[id] = set_first_row_as_header(table)
-                print(final_dfs)
-
-                key_value_pairs = []
-                for df in final_dfs:
-                    key_value_pairs.extend(ocr_functions.generate_key_value_pairs(df, data_set_selected_id))
-                st.write("Completed")
-
-                st.session_state.data_payload = json_export(key_value_pairs)
-                print(st.session_state.data_payload)
-
-        if st.button("Upload to DHIS2"):
-            if st.session_state.data_payload == None:
-                raise ValueError("Data empty - generate key value pairs first")
+# Prompt the user for a password if they haven't entered the correct one yet
+if not st.session_state['password_correct']:
+    with placeholder.container():
+        password = st.text_input(f"Enter password", type="password")
+        if st.button("Submit Password", key="password_submit_button"):
+            if password == CORRECT_PASSWORD:
+                st.session_state['password_correct'] = True
+                placeholder.empty()  # Clear the password prompt
             else:
-                URL = ''
-                data_value_set_url = f'{URL}/api/dataValueSets?dryRun=true'
-                # Send the POST request with the data payload
-                response = requests.post(
-                    data_value_set_url,
-                    auth=('', ''),
-                    headers={'Content-Type': 'application/json'},
-                    data=st.session_state.data_payload
-                )
+                st.error("Incorrect password. Please try again.")
 
-                # # Check the response status
-                # if response.status_code == 200:
-                print('Data entry dry run successful')
-                print('Response data:')
-                print(response.json())
-                # else:
-                print(f'Failed to enter data, status code: {response.status_code}')
-                print('Response data:')
-                print(response.json())
-            st.write("Completed")
+if st.session_state['password_correct']:
+    
+    create_server()
+
+    # Uploading file
+    holder = st.empty()
+    
+    holder.write("### File Upload ###")
+    tally_sheet = holder.file_uploader("Please upload one image of a tally sheet.", type=["png", "jpg", "jpeg"],
+                                accept_multiple_files=True,
+                                key=st.session_state['upload_key'])
+
+    # Once images are uploaded
+    if len(tally_sheet) > 0:
+        
+        holder.empty()
+        
+        # Displaying images so the user can see them
+        with st.expander("Show Images"):
+            for sheet in tally_sheet:
+                image = correct_image_orientation(sheet)
+                st.image(image)
+
+        if st.button("Clear Form", type='primary') and 'upload_key' in st.session_state.keys():
+            st.session_state.upload_key += 1
+            if 'table_dfs' in st.session_state:
+                del st.session_state['table_dfs']
+            st.rerun()
+
+        with st.spinner("Running image recognition..."):
+            results = get_results_wrapper(tally_sheet)
+
+        # ***************************************
+        result = results[0]
+
+        # Initialize from JSON result
+        # dataSet = result.get('dataSet', None)
+        # orgUnit = result.get('Health Structure', None)
+        # start_date = result.get('Start Date', None)
+        # end_date = result.get('End Date', None)
+        dataSet = None
+        orgUnit = None
+        start_date = None
+        end_date = None
+
+        # Initialize org_unit with any recognized text from tally sheet
+        # Change the value when user edits the field
+        with st.sidebar:
+            if orgUnit:
+                org_unit = st.text_input("Organisation Unit", value=orgUnit)
+            else:
+                org_unit = st.text_input("Organisation Unit", placeholder="Search organisation unit name")
+
+            org_unit_dropdown = None
+            org_unit_options = None
+            data_set_selected_id =None
+
+            # Get all UIDs corresponding to the text field value
+            if org_unit:
+                org_unit_options = dhis2_all_UIDs("organisationUnits", [org_unit])
+                if org_unit_options == []:
+                    st.error("No organization units by this name were found. Please try again.")
+                    org_unit_dropdown = None
+                else:    
+                    org_unit_dropdown = st.selectbox(
+                        "Searched Organisations",
+                        [id[0] for id in org_unit_options],
+                        index=None
+                    )
+
+                # Get org unit children
+                if org_unit_dropdown is not None:
+                    if org_unit_options:
+                        org_unit_id = [id[1] for id in org_unit_options if id[0] == org_unit_dropdown][0]
+                        org_unit_children_options = get_org_unit_children(org_unit_id)
+                        org_unit_children_dropdown = st.selectbox(
+                            "Tally Sheet Type",
+                            sorted([id[0] for id in org_unit_children_options]),
+                            index=None
+                        )
+
+                        if org_unit_children_dropdown is not None:
+
+                            org_unit_child_id = [id[2] for id in org_unit_children_options if id[0] == org_unit_children_dropdown][0]
+                            data_set_ids = [id[1] for id in org_unit_children_options if id[0] == org_unit_children_dropdown][0]
+                            data_set_options = get_data_sets(data_set_ids)
+                            data_set = st.selectbox(
+                                "Data Set",
+                                sorted([id[0] for id in data_set_options]),
+                                index=None
+                            )
+
+                            if data_set is not None:
+                                data_set_selected_id = [id[1] for id in data_set_options if id[0] == data_set][0]
+                                period_type = [id[2] for id in data_set_options if id[0] == data_set][0]
+                                st.write("Period Type\: " + period_type)
+
+            # Initialize with period values recognized from tally sheet or entered by user
+            if (start_date and end_date):
+                if start_date:
+                    period_start = st.date_input("Period Start Date", format="YYYY-MM-DD", value=start_date, max_value=datetime.today())
+                else:
+                    period_start = st.date_input("Period Start Date", format="YYYY-MM-DD", max_value=datetime.today())
+            else:
+                period_start = st.date_input("Period Start Date", format="YYYY-MM-DD", max_value=datetime.today())
+
+
+        # Populate streamlit with data recognized from tally sheets
+        table_names, table_dfs = [], []
+        for result in results:
+            names, df = parse_table_data(result)
+            table_names.extend(names)
+            table_dfs.extend(df)
+
+            if 'table_names' not in st.session_state:
+                st.session_state.table_names = table_names
+            if 'table_dfs' not in st.session_state:
+                st.session_state.table_dfs = table_dfs
+
+            # Displaying the editable information
+            for i, (table_name, df) in enumerate(zip(st.session_state.table_names, st.session_state.table_dfs)):
+                st.write(f"{table_name}")
+                col1, col2 = st.columns([4, 1])
+
+                with col1:
+                    # Display tables as editable fields
+                    table_dfs[i] = st.data_editor(df, num_rows="dynamic", key=f"editor_{i}", use_container_width=True)
+
+                with col2:
+                    # Add column functionality
+                    # new_col_name = st.text_input(f"New column name", key=f"new_col_{i}")
+                    if st.button(f"Add Column", key=f"add_col_{i}"):
+                        table_dfs[i][int(table_dfs[i].columns[-1]) + 1] = None
+
+                    # Delete column functionality
+                    if not st.session_state.table_dfs[i].empty:
+                        col_to_delete = st.selectbox(f"Column to delete", st.session_state.table_dfs[i].columns,
+                                                    key=f"del_col_{i}")
+                        if st.button(f"Delete Column", key=f"delete_col_{i}"):
+                            table_dfs[i] = table_dfs[i].drop(columns=[col_to_delete])
+            
+            # if st.button(f"Correct field names", key=f"correct_names"):
+            #     table_dfs = correct_field_names(table_dfs)
+                
+            # Rerun the code to display any edits made by user
+            for idx, table in enumerate(table_dfs):
+                if not table_dfs[idx].equals(st.session_state.table_dfs[idx]):
+                    st.session_state.table_dfs = table_dfs
+                    st.rerun()
+            
+            if 'data_payload' not in st.session_state:
+                st.session_state.data_payload = None
+
+            configure_DHIS2_server("settings.ini")
+    
+        # Generate and display key-value pairs
+            if st.button("Upload to DHIS2", type="primary"):
+                if data_set_selected_id:
+                    with st.spinner("Uploading in progress, please wait..."):
+                        final_dfs = copy.deepcopy(st.session_state.table_dfs)
+                        for id, table in enumerate(final_dfs):
+                            final_dfs[id] = set_first_row_as_header(table)
+                        print(final_dfs)
+    
+                        key_value_pairs = []
+                        for df in final_dfs:
+                            key_value_pairs.extend(ocr_functions.generate_key_value_pairs(df, data_set_selected_id))
+
+                    st.session_state.data_payload = json_export(key_value_pairs)
+                    if st.session_state.data_payload is not None:
+                        data_value_set_url = f'{dhis2.DHIS2_SERVER_URL}/api/dataValueSets?dryRun=true'
+                        # Send the POST request with the data payload
+                        response = requests.post(
+                            data_value_set_url,
+                            auth=(dhis2.DHIS2_USERNAME, dhis2.DHIS2_PASSWORD),
+                            headers={'Content-Type': 'application/json'},
+                            data=st.session_state.data_payload
+                        )
+
+                    # # Check the response status
+                    if response.status_code == 200:
+                        print('Response data:')
+                        print(response.json())
+                        st.success("Submitted!")
+                    else:
+                        print(f'Failed to enter data, status code: {response.status_code}')
+                        print('Response data:')
+                        print(response.json())
+                        st.error("Submission failed. Please try again or notify a technician.")
+                else:
+                    st.error("Please finish submitting organization unit and data set.")
 

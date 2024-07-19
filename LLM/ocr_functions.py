@@ -59,7 +59,6 @@ def parse_table_data(result):
         table_name = table.get("table_name", f"Table {len(dataframes) + 1}")
         columns = table["headers"]
         data = table["data"]
-
         data.insert(0, columns)
         df = pd.DataFrame(data)
         table_names.append(table_name)
