@@ -266,6 +266,8 @@ if st.session_state['password_correct']:
             st.session_state.upload_key += 1
             if 'table_dfs' in st.session_state:
                 del st.session_state['table_dfs']
+            if 'table_names' in st.session_state:
+                del st.session_state['table_names']
             st.rerun()
 
         with st.spinner("Running image recognition..."):
