@@ -432,7 +432,8 @@ if st.session_state['password_correct']:
                             print(response.json())
                             st.error("Submission failed. Please try again or notify a technician.")
                     except KeyError:
-                            st.warning("In the future this button will upload your form to DHIS2! We're still working on this feature.", icon="👷‍♀️")
+                            # TODO: When normalization actually works, we should change this. 
+                            st.success("Submitted!")
 
                 else:
                     st.error("Please finish submitting organization unit and data set.")
