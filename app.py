@@ -1,18 +1,27 @@
 import copy
-import requests
 from datetime import date
 import json
+import os
 
-import streamlit as st
 from doctr.io import DocumentFile
 from doctr.models import ocr_predictor
 from img2table.document import Image
 from img2table.ocr import DocTR
 from PIL import Image as PILImage, ExifTags
+import requests
+import streamlit as st
 
 import msfocr.data.dhis2
 import msfocr.doctr.ocr_functions
 
+def configure_secrets():
+    """Checks that necessary environment variables are set for fast failing.
+    Configures the DHIS2 server connection.
+    """
+    username = os.environ["DHIS2_USERNAME"]
+    password = os.environ["DHIS2_PASSWORD"]
+    server_url = os.environ["DHIS2_SERVER_URL"]
+    msfocr.data.dhis2.configure_DHIS2_server(username, password, server_url)
 
 # Function definitions
 @st.cache_data
@@ -228,10 +237,6 @@ def get_period():
         month = period_start.month,
         week = week
         )
-    
-
-def create_server():
-   msfocr.data.dhis2.configure_DHIS2_server()
 
 # Set the page layout to centered
 # st.set_page_config(layout="wide")
@@ -255,7 +260,7 @@ with st.expander("Show Images"):
 
 # OCR Model
 ocr_model, doctr_ocr = create_ocr()
-create_server()
+configure_secrets()
 
 # Hardcoded Periods, probably won't update but can get them through API
 PERIOD_TYPES = {
@@ -432,7 +437,6 @@ if len(tally_sheet) > 0:
             if 'data_payload' not in st.session_state:
                 st.session_state.data_payload = None
 
-            msfocr.data.dhis2.configure_DHIS2_server("settings.ini")
             # Generate and display key-value pairs
             if st.button("Generate Key-Value Pairs"):
                 # Set first row as header of df

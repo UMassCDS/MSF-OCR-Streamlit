@@ -1,6 +1,7 @@
 from datetime import date, datetime
 import copy
 import json
+import os
 
 import requests
 import streamlit as st
@@ -8,6 +9,17 @@ import streamlit as st
 import msfocr.data.dhis2
 import msfocr.doctr.ocr_functions
 import msfocr.llm.ocr_functions
+
+
+def configure_secrets():
+    """Checks that necessary environment variables are set for fast failing.
+    Configures the DHIS2 server connection.
+    """
+    username = os.environ["DHIS2_USERNAME"]
+    password = os.environ["DHIS2_PASSWORD"]
+    server_url = os.environ["DHIS2_SERVER_URL"]
+    open_ai = os.environ["OPENAI_API_KEY"]
+    msfocr.data.dhis2.configure_DHIS2_server(username, password, server_url)
 
 
 @st.cache_data
@@ -27,14 +39,6 @@ def dhis2_all_UIDs(item_type, search_items):
     else:
         return msfocr.data.dhis2.getAllUIDs(item_type, search_items)
 
-def create_server():
-    """
-    Configures the DHIS2 server connection.
-
-    Usage:
-    create_server()
-    """
-    msfocr.data.dhis2.configure_DHIS2_server()
 
 @st.cache_data
 def get_data_sets(data_set_uids):
@@ -244,7 +248,7 @@ if not st.session_state['password_correct']:
 
 if st.session_state['password_correct']:
     
-    create_server()
+    configure_secrets()
 
     # Uploading file
     holder = st.empty()
@@ -398,8 +402,6 @@ if st.session_state['password_correct']:
             
             if 'data_payload' not in st.session_state:
                 st.session_state.data_payload = None
-
-            msfocr.data.dhis2.configure_DHIS2_server("settings.ini")
     
             # Generate and display key-value pairs
             if st.button("Upload to DHIS2", type="primary"):
