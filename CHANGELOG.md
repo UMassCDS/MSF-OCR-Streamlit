@@ -7,7 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 You should also add project tags for each release in Github, see [Managing releases in a repository](https://docs.github.com/en/repositories/releasing-projects-on-github/managing-releases-in-a-repository).
 
 ## [Unreleased]
+
+## [1.0.0] - 2024-07-19
 ### Added
+- app_llm.py OCR backed by OpenAI GPT vision model
 - Streamlit application that recognizes uploaded tally sheet tables and pushes data to DHIS2
-- Applications OCR backed by DocTR computer vision models
+- app_doctr.py OCR backed by DocTR computer vision models
 - Containerization support using Dockerfile

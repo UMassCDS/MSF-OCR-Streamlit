@@ -1,17 +1,27 @@
-import streamlit as st
-import pandas as pd
+import copy
+from datetime import date
 import json
-from msfocr.data import data_upload_DHIS2 as dhis2
-from msfocr.docTR import ocr_functions
-from msfocr.data.data_upload_DHIS2 import configure_DHIS2_server
+import os
+
 from doctr.io import DocumentFile
 from doctr.models import ocr_predictor
-from img2table.document import Image as Image
-from PIL import Image as PILImage, ExifTags
+from img2table.document import Image
 from img2table.ocr import DocTR
-import copy
+from PIL import Image as PILImage, ExifTags
 import requests
-from datetime import date
+import streamlit as st
+
+import msfocr.data.dhis2
+import msfocr.doctr.ocr_functions
+
+def configure_secrets():
+    """Checks that necessary environment variables are set for fast failing.
+    Configures the DHIS2 server connection.
+    """
+    username = os.environ["DHIS2_USERNAME"]
+    password = os.environ["DHIS2_PASSWORD"]
+    server_url = os.environ["DHIS2_SERVER_URL"]
+    msfocr.data.dhis2.configure_DHIS2_server(username, password, server_url)
 
 # Function definitions
 @st.cache_data
@@ -41,7 +51,7 @@ def dhis2_all_UIDs(item_type, search_items):
     if search_items == "" or search_items is None:
         return []
     else:
-        return dhis2.getAllUIDs(item_type, search_items)
+        return msfocr.data.dhis2.getAllUIDs(item_type, search_items)
 
 
 # def convert_df(dfs):
@@ -106,7 +116,7 @@ def correct_field_names(dfs):
             text = table.iloc[row,0]
             if text is not None:
                 for name in dataElement_list:
-                    sim = ocr_functions.letter_by_letter_similarity(text, name)
+                    sim = msfocr.doctr.ocr_functions.letter_by_letter_similarity(text, name)
                     if max_similarity_dataElement < sim:
                         max_similarity_dataElement = sim
                         dataElement = name
@@ -119,7 +129,7 @@ def correct_field_names(dfs):
             text = table.iloc[0,id]
             if text is not None:
                 for name in categoryOptionsList:
-                    sim = ocr_functions.letter_by_letter_similarity(text, name)
+                    sim = msfocr.doctr.ocr_functions.letter_by_letter_similarity(text, name)
                     if max_similarity_catOpt < sim:
                         max_similarity_catOpt = sim
                         catOpt = name
@@ -150,22 +160,22 @@ def get_uploaded_images(tally_sheet):
 
 @st.cache_data
 def get_results(uploaded_images):
-    return [ocr_functions.get_word_level_content(ocr_model, doc) for doc in uploaded_images]
+    return [msfocr.doctr.ocr_functions.get_word_level_content(ocr_model, doc) for doc in uploaded_images]
 
 @st.cache_data
 def get_tabular_content_wrapper(_doctr_ocr, img, confidence_lookup_dict):
-    return ocr_functions.get_tabular_content(_doctr_ocr, img, confidence_lookup_dict)
+    return msfocr.doctr.ocr_functions.get_tabular_content(_doctr_ocr, img, confidence_lookup_dict)
 
 def get_sheet_type_wrapper(result):
-    return ocr_functions.get_sheet_type(result)
+    return msfocr.doctr.ocr_functions.get_sheet_type(result)
 
 @st.cache_data
 def get_data_sets(data_set_uids):
-    return dhis2.getDataSets(data_set_uids)
+    return msfocr.data.dhis2.getDataSets(data_set_uids)
 
 @st.cache_data
 def get_org_unit_children(org_unit_id):
-    return dhis2.getOrgUnitChildren(org_unit_id)
+    return msfocr.data.dhis2.getOrgUnitChildren(org_unit_id)
 
 @st.cache_resource
 def create_ocr():
@@ -227,10 +237,6 @@ def get_period():
         month = period_start.month,
         week = week
         )
-    
-
-def create_server():
-    dhis2.configure_DHIS2_server()
 
 # Set the page layout to centered
 # st.set_page_config(layout="wide")
@@ -254,7 +260,7 @@ with st.expander("Show Images"):
 
 # OCR Model
 ocr_model, doctr_ocr = create_ocr()
-create_server()
+configure_secrets()
 
 # Hardcoded Periods, probably won't update but can get them through API
 PERIOD_TYPES = {
@@ -302,15 +308,15 @@ if len(tally_sheet) > 0:
     # Initialize org_unit with any recognized text from tally sheet
     # Change the value when user edits the field
     if form_type[1]:
-        org_unit = st.text_input("Organization Unit", value=form_type[1])    
+        org_unit = st.text_input("Organisation Unit", value=form_type[1])    
     else: 
-        org_unit = st.text_input("Organization Unit", placeholder="Search organisation unit name")
+        org_unit = st.text_input("Organisation Unit", placeholder="Search organisation unit name")
     
     # Get all UIDs corresponding to the text field value 
     if org_unit:
         org_unit_options = dhis2_all_UIDs("organisationUnits", [org_unit])
         org_unit_dropdown = st.selectbox(
-            "Searched Organizations",
+            "Organisation Results",
             [id[0] for id in org_unit_options],
             index=None
         )
@@ -320,7 +326,7 @@ if len(tally_sheet) > 0:
         org_unit_id = [id[1] for id in org_unit_options if id[0] == org_unit_dropdown][0]
         org_unit_children_options = get_org_unit_children(org_unit_id)
         org_unit_children_dropdown = st.selectbox(
-            "Organization Children",
+            "Organisation Children",
             sorted([id[0] for id in org_unit_children_options]),
             index=None
         )
@@ -374,7 +380,7 @@ if len(tally_sheet) > 0:
     # Populate streamlit with data recognized from tally sheets
     for result in results:
         # Get tabular data ad dataframes
-        confidence_lookup_dict = ocr_functions.get_confidence_values(result)
+        confidence_lookup_dict = msfocr.doctr.ocr_functions.get_confidence_values(result)
         table_dfs = []
         for sheet in tally_sheet:
             img = Image(src=sheet)
@@ -431,7 +437,6 @@ if len(tally_sheet) > 0:
             if 'data_payload' not in st.session_state:
                 st.session_state.data_payload = None
 
-            configure_DHIS2_server("settings.ini")
             # Generate and display key-value pairs
             if st.button("Generate Key-Value Pairs"):
                 # Set first row as header of df
@@ -441,7 +446,7 @@ if len(tally_sheet) > 0:
                 print(final_dfs)
                 key_value_pairs = []
                 for df in final_dfs:
-                    key_value_pairs.extend(ocr_functions.generate_key_value_pairs(df))
+                    key_value_pairs.extend(msfocr.doctr.ocr_functions.generate_key_value_pairs(df))
                 st.write("Completed")
                 
                 st.session_state.data_payload = json_export(key_value_pairs)
