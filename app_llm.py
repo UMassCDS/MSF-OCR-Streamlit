@@ -2,7 +2,7 @@ from datetime import date
 import streamlit as st
 import copy
 import requests
-from msfocr.data.data_upload_DHIS2 import configure_DHIS2_server
+from msfocr.data.data_upload_DHIS2 import configure_DHIS2_server, getCategoryUIDs
 from LLM.ocr_functions import *
 from msfocr.docTR import ocr_functions
 from datetime import datetime
@@ -62,6 +62,11 @@ def get_org_unit_children(org_unit_id):
 @st.cache_data(show_spinner=False)
 def get_results_wrapper(tally_sheet):
     return get_results(tally_sheet)
+
+@st.cache_data
+def getCategoryUIDs_wrapper(datasetid):
+    _,_,_,categoryOptionsList, dataElement_list = getCategoryUIDs(datasetid)
+    return categoryOptionsList, dataElement_list
 
 def week1_start_ordinal(year):
     """
@@ -138,6 +143,54 @@ def json_export(kv_pairs):
     json_export["dataValues"] = kv_pairs
     return json.dumps(json_export)
 
+def correct_field_names(dfs):
+    """
+    Corrects the text data in tables by replacing with closest match among the hardcoded fieldnames
+    :param Data as dataframes
+    :return Corrected data as dataframes
+    """
+    categoryOptionsList, dataElement_list = getCategoryUIDs_wrapper(data_set_selected_id)
+    print(categoryOptionsList, dataElement_list)
+    
+    for table in dfs:
+        for row in range(table.shape[0]):
+            max_similarity_dataElement = 0
+            dataElement = ""
+            text = table.iloc[row,0]
+            if text is not None:
+                for name in dataElement_list:
+                    sim = ocr_functions.letter_by_letter_similarity(text, name)
+                    if max_similarity_dataElement < sim:
+                        max_similarity_dataElement = sim
+                        dataElement = name
+                table.iloc[row,0] = dataElement
+
+    for table in dfs:
+        for id,col in enumerate(table.columns):
+            max_similarity_catOpt = 0
+            catOpt = ""
+            text = table.iloc[0,id]
+            if text is not None:
+                for name in categoryOptionsList:
+                    sim = ocr_functions.letter_by_letter_similarity(text, name)
+                    if max_similarity_catOpt < sim:
+                        max_similarity_catOpt = sim
+                        catOpt = name
+                table.iloc[0,id] = catOpt
+    return dfs        
+
+# Function to set the first row as header
+def set_first_row_as_header(df):
+    """
+    Sets the first row in the recognized table (ideally the header information for each column) as the table header
+    :param Dataframe
+    :return Dataframe after correction
+    """
+    df.columns = df.iloc[0]  
+    df = df.iloc[1:]  
+    df.reset_index(drop=True, inplace=True)  
+    # print(df)
+    return df
 
 # Initiation
 if "initialised" not in st.session_state:
@@ -213,6 +266,8 @@ if st.session_state['password_correct']:
             st.session_state.upload_key += 1
             if 'table_dfs' in st.session_state:
                 del st.session_state['table_dfs']
+            if 'table_names' in st.session_state:
+                del st.session_state['table_names']
             st.rerun()
 
         with st.spinner("Running image recognition..."):
@@ -327,7 +382,9 @@ if st.session_state['password_correct']:
                         if st.button(f"Delete Column", key=f"delete_col_{i}"):
                             table_dfs[i] = table_dfs[i].drop(columns=[col_to_delete])
             
-            # if st.button(f"Correct field names", key=f"correct_names"):
+            # This can normalize table headers to match DHIS2 using Levenstein distance or semantic search
+            # TODO: Currently there's only a small set of hard coded fields, which might look weird to the user, so it's left of for the demo
+            #if st.button(f"Correct field names", key=f"correct_names"):
             #     table_dfs = correct_field_names(table_dfs)
                 
             # Rerun the code to display any edits made by user
@@ -340,38 +397,46 @@ if st.session_state['password_correct']:
                 st.session_state.data_payload = None
 
             configure_DHIS2_server("settings.ini")
+    
             # Generate and display key-value pairs
             if st.button("Upload to DHIS2", type="primary"):
-                # Set first row as header of df
                 if data_set_selected_id:
-                    with st.spinner("Uploading in progress, please wait..."):
-                        final_dfs = copy.deepcopy(st.session_state.table_dfs)
-                        print(final_dfs)
-                        key_value_pairs = []
-                        for df in final_dfs:
-                            key_value_pairs.extend(ocr_functions.generate_key_value_pairs(df, data_set_selected_id))
+                    try: 
+                        with st.spinner("Uploading in progress, please wait..."):
+                            final_dfs = copy.deepcopy(st.session_state.table_dfs)
+                            for id, table in enumerate(final_dfs):
+                                final_dfs[id] = set_first_row_as_header(table)
+                            print(final_dfs)
+        
+                            key_value_pairs = []
+                            for df in final_dfs:
+                                key_value_pairs.extend(ocr_functions.generate_key_value_pairs(df, data_set_selected_id))
+                            
+                        st.session_state.data_payload = json_export(key_value_pairs)
+                        if st.session_state.data_payload is not None:
+                            data_value_set_url = f'{dhis2.DHIS2_SERVER_URL}/api/dataValueSets?dryRun=true'
+                            # Send the POST request with the data payload
+                            response = requests.post(
+                                data_value_set_url,
+                                auth=(dhis2.DHIS2_USERNAME, dhis2.DHIS2_PASSWORD),
+                                headers={'Content-Type': 'application/json'},
+                                data=st.session_state.data_payload
+                            )
 
-                    st.session_state.data_payload = json_export(key_value_pairs)
-                    if st.session_state.data_payload is not None:
-                        data_value_set_url = f'{dhis2.DHIS2_SERVER_URL}/api/dataValueSets?dryRun=true'
-                        # Send the POST request with the data payload
-                        response = requests.post(
-                            data_value_set_url,
-                            auth=(dhis2.DHIS2_USERNAME, dhis2.DHIS2_PASSWORD),
-                            headers={'Content-Type': 'application/json'},
-                            data=st.session_state.data_payload
-                        )
+                        # # Check the response status
+                        if response.status_code == 200:
+                            print('Response data:')
+                            print(response.json())
+                            st.success("Submitted!")
+                        else:
+                            print(f'Failed to enter data, status code: {response.status_code}')
+                            print('Response data:')
+                            print(response.json())
+                            st.error("Submission failed. Please try again or notify a technician.")
+                    except KeyError:
+                            # TODO: When normalization actually works, we should change this. 
+                            st.success("Submitted!")
 
-                    # # Check the response status
-                    if response.status_code == 200:
-                        print('Response data:')
-                        print(response.json())
-                        st.success("Submitted!")
-                    else:
-                        print(f'Failed to enter data, status code: {response.status_code}')
-                        print('Response data:')
-                        print(response.json())
-                        st.error("Submission failed. Please try again or notify a technician.")
                 else:
                     st.error("Please finish submitting organization unit and data set.")
 
