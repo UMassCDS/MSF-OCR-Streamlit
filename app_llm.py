@@ -413,7 +413,7 @@ if st.session_state['password_correct']:
         
                             key_value_pairs = []
                             for df in final_dfs:
-                                key_value_pairs.extend(msfocr.data.dhis2.generate_key_value_pairs(df, data_set_selected_id))
+                                key_value_pairs.extend(msfocr.doctr.ocr_functions.generate_key_value_pairs(df, data_set_selected_id))
                             
                         st.session_state.data_payload = json_export(key_value_pairs)
                         if st.session_state.data_payload is not None:
