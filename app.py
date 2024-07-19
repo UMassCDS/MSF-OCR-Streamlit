@@ -308,15 +308,15 @@ if len(tally_sheet) > 0:
     # Initialize org_unit with any recognized text from tally sheet
     # Change the value when user edits the field
     if form_type[1]:
-        org_unit = st.text_input("Organization Unit", value=form_type[1])    
+        org_unit = st.text_input("Organisation Unit", value=form_type[1])    
     else: 
-        org_unit = st.text_input("Organization Unit", placeholder="Search organisation unit name")
+        org_unit = st.text_input("Organisation Unit", placeholder="Search organisation unit name")
     
     # Get all UIDs corresponding to the text field value 
     if org_unit:
         org_unit_options = dhis2_all_UIDs("organisationUnits", [org_unit])
         org_unit_dropdown = st.selectbox(
-            "Searched Organizations",
+            "Organisation Results",
             [id[0] for id in org_unit_options],
             index=None
         )
@@ -326,7 +326,7 @@ if len(tally_sheet) > 0:
         org_unit_id = [id[1] for id in org_unit_options if id[0] == org_unit_dropdown][0]
         org_unit_children_options = get_org_unit_children(org_unit_id)
         org_unit_children_dropdown = st.selectbox(
-            "Organization Children",
+            "Organisation Children",
             sorted([id[0] for id in org_unit_children_options]),
             index=None
         )

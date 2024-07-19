@@ -313,7 +313,7 @@ if st.session_state['password_correct']:
                     org_unit_dropdown = None
                 else:    
                     org_unit_dropdown = st.selectbox(
-                        "Searched Organisations",
+                        "Organisation Results",
                         [id[0] for id in org_unit_options],
                         index=None
                     )
@@ -443,5 +443,5 @@ if st.session_state['password_correct']:
                             st.success("Submitted!")
 
                 else:
-                    st.error("Please finish submitting organization unit and data set.")
+                    st.error("Please finish submitting organisation unit and data set.")
 
