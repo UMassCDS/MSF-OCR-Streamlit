@@ -1,5 +1,5 @@
 # For more information, please refer to https://aka.ms/vscode-docker-python
-FROM python:3.11.9-slim
+FROM python:3.10-slim
 
 # Keeps Python from generating .pyc files in the container
 ENV PYTHONDONTWRITEBYTECODE=1
@@ -10,8 +10,9 @@ ENV PYTHONUNBUFFERED=1
 # Setting work directory
 WORKDIR /app
 
-# Getting git to clone 
+# Getting git to clone and system dependencies for DocTR
 RUN apt-get update && apt-get install -y \
+    ffmpeg libsm6 libxext6 libhdf5-dev pkg-config \
     build-essential \
     curl \
     software-properties-common \
@@ -22,7 +23,7 @@ RUN apt-get update && apt-get install -y \
 COPY . .
 
 # Install pip requirements
-RUN python -m pip install -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Streamlit listen to this container port
 EXPOSE 8501
