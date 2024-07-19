@@ -1,11 +1,14 @@
-from datetime import date
-import streamlit as st
+from datetime import date, datetime
 import copy
+import json
+
 import requests
-from msfocr.data.data_upload_DHIS2 import configure_DHIS2_server, getCategoryUIDs
-from LLM.ocr_functions import *
-from msfocr.docTR import ocr_functions
-from datetime import datetime
+import streamlit as st
+
+import msfocr.data.dhis2
+import msfocr.doctr.ocr_functions
+import msfocr.llm.ocr_functions
+
 
 @st.cache_data
 def dhis2_all_UIDs(item_type, search_items):
@@ -22,7 +25,7 @@ def dhis2_all_UIDs(item_type, search_items):
     if search_items == "" or search_items is None:
         return []
     else:
-        return dhis2.getAllUIDs(item_type, search_items)
+        return msfocr.data.dhis2.getAllUIDs(item_type, search_items)
 
 def create_server():
     """
@@ -31,7 +34,7 @@ def create_server():
     Usage:
     create_server()
     """
-    dhis2.configure_DHIS2_server()
+    msfocr.data.dhis2.configure_DHIS2_server()
 
 @st.cache_data
 def get_data_sets(data_set_uids):
@@ -44,7 +47,7 @@ def get_data_sets(data_set_uids):
     :param data_set_uids: List of data set UIDs
     :return: List of data sets
     """
-    return dhis2.getDataSets(data_set_uids)
+    return  msfocr.data.dhis2.getDataSets(data_set_uids)
 
 @st.cache_data
 def get_org_unit_children(org_unit_id):
@@ -57,15 +60,15 @@ def get_org_unit_children(org_unit_id):
     :param org_unit_id: UID of the parent organization unit
     :return: List of child organization units
     """
-    return dhis2.getOrgUnitChildren(org_unit_id)
+    return msfocr.data.dhis2.getOrgUnitChildren(org_unit_id)
 
 @st.cache_data(show_spinner=False)
 def get_results_wrapper(tally_sheet):
-    return get_results(tally_sheet)
+    return msfocr.llm.ocr_functions.get_results(tally_sheet)
 
 @st.cache_data
 def getCategoryUIDs_wrapper(datasetid):
-    _,_,_,categoryOptionsList, dataElement_list = getCategoryUIDs(datasetid)
+    _,_,_,categoryOptionsList, dataElement_list =  msfocr.data.dhis2.getCategoryUIDs(datasetid)
     return categoryOptionsList, dataElement_list
 
 def week1_start_ordinal(year):
@@ -159,7 +162,7 @@ def correct_field_names(dfs):
             text = table.iloc[row,0]
             if text is not None:
                 for name in dataElement_list:
-                    sim = ocr_functions.letter_by_letter_similarity(text, name)
+                    sim = msfocr.doctr.ocr_functions.letter_by_letter_similarity(text, name)
                     if max_similarity_dataElement < sim:
                         max_similarity_dataElement = sim
                         dataElement = name
@@ -172,7 +175,7 @@ def correct_field_names(dfs):
             text = table.iloc[0,id]
             if text is not None:
                 for name in categoryOptionsList:
-                    sim = ocr_functions.letter_by_letter_similarity(text, name)
+                    sim =  msfocr.doctr.ocr_functions.letter_by_letter_similarity(text, name)
                     if max_similarity_catOpt < sim:
                         max_similarity_catOpt = sim
                         catOpt = name
@@ -259,7 +262,7 @@ if st.session_state['password_correct']:
         # Displaying images so the user can see them
         with st.expander("Show Images"):
             for sheet in tally_sheet:
-                image = correct_image_orientation(sheet)
+                image = msfocr.llm.ocr_functions.correct_image_orientation(sheet)
                 st.image(image)
 
         if st.button("Clear Form", type='primary') and 'upload_key' in st.session_state.keys():
@@ -351,7 +354,7 @@ if st.session_state['password_correct']:
         # Populate streamlit with data recognized from tally sheets
         table_names, table_dfs = [], []
         for result in results:
-            names, df = parse_table_data(result)
+            names, df = msfocr.llm.ocr_functions.parse_table_data(result)
             table_names.extend(names)
             table_dfs.extend(df)
 
@@ -396,7 +399,7 @@ if st.session_state['password_correct']:
             if 'data_payload' not in st.session_state:
                 st.session_state.data_payload = None
 
-            configure_DHIS2_server("settings.ini")
+            msfocr.data.dhis2.configure_DHIS2_server("settings.ini")
     
             # Generate and display key-value pairs
             if st.button("Upload to DHIS2", type="primary"):
@@ -410,15 +413,15 @@ if st.session_state['password_correct']:
         
                             key_value_pairs = []
                             for df in final_dfs:
-                                key_value_pairs.extend(ocr_functions.generate_key_value_pairs(df, data_set_selected_id))
+                                key_value_pairs.extend(msfocr.data.dhis2.generate_key_value_pairs(df, data_set_selected_id))
                             
                         st.session_state.data_payload = json_export(key_value_pairs)
                         if st.session_state.data_payload is not None:
-                            data_value_set_url = f'{dhis2.DHIS2_SERVER_URL}/api/dataValueSets?dryRun=true'
+                            data_value_set_url = f'{msfocr.data.dhis2.DHIS2_SERVER_URL}/api/dataValueSets?dryRun=true'
                             # Send the POST request with the data payload
                             response = requests.post(
                                 data_value_set_url,
-                                auth=(dhis2.DHIS2_USERNAME, dhis2.DHIS2_PASSWORD),
+                                auth=(msfocr.data.dhis2.DHIS2_USERNAME, msfocr.data.dhis2.DHIS2_PASSWORD),
                                 headers={'Content-Type': 'application/json'},
                                 data=st.session_state.data_payload
                             )
