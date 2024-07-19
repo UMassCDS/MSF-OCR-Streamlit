@@ -4,7 +4,7 @@ Uses a Streamlit web app in conjunction with an Optical Character Recognition (O
 
 This repository contains two version of the application:
 - `app_llm.py` uses [OpenAI's GPT 4o model](https://platform.openai.com/docs/guides/vision) as an OCR engine to 'read' the tables from images
-- `app.py` uses a the [docTR](https://pypi.org/project/python-doctr/) library as an OCR engine to parse text from the tables in images.
+- `app_doctr.py` uses a the [docTR](https://pypi.org/project/python-doctr/) library as an OCR engine to parse text from the tables in images.
 
 ## Necessary environment variables
 In order to use the application, you will need to set the following environment variables for the Streamlit app to access the DHIS2 server:
@@ -23,7 +23,7 @@ If you are using the `app_llm.py` version of the application, you will also need
 
 3) Run your desired Streamlit application with one of the following commands:
     - OpenAI version: `streamlit run app_llm.py` 
-    - DocTR version: `streamlit run app.py` 
+    - DocTR version: `streamlit run app_doctr.py` 
 
 ## Docker Instructions
 We have provided a Dockerfile in order to easily build and deploy the OpenAI application version as a Docker container. 
