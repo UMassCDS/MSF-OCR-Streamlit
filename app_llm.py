@@ -380,8 +380,8 @@ if st.session_state['password_correct']:
                         if st.button(f"Delete Column", key=f"delete_col_{i}"):
                             table_dfs[i] = table_dfs[i].drop(columns=[col_to_delete])
             
-            # if st.button(f"Correct field names", key=f"correct_names"):
-            #     table_dfs = correct_field_names(table_dfs)
+            if st.button(f"Correct field names", key=f"correct_names"):
+                 table_dfs = correct_field_names(table_dfs)
                 
             # Rerun the code to display any edits made by user
             for idx, table in enumerate(table_dfs):
