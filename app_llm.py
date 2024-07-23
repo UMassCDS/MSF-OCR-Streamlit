@@ -5,6 +5,7 @@ import os
 
 import requests
 import streamlit as st
+from simpleeval import simple_eval
 
 import msfocr.data.dhis2
 import msfocr.doctr.ocr_functions
@@ -203,6 +204,13 @@ def save_st_table(table_dfs):
         if not table_dfs[idx].equals(st.session_state.table_dfs[idx]):
             st.session_state.table_dfs = table_dfs
             st.rerun()
+            
+def evaluate_cells(table_dfs):
+    for table in table_dfs:
+        table_removed_labels = table.loc[1:, 1:]
+        for col in table_removed_labels.columns:
+            table[col] = table_removed_labels[col].apply(lambda x: simple_eval(x) if x and x != "-" else x)
+    return table_dfs
 
 # Initiation
 if "initialised" not in st.session_state:
@@ -366,6 +374,7 @@ if st.session_state['password_correct']:
             names, df = msfocr.llm.ocr_functions.parse_table_data(result)
             table_names.extend(names)
             table_dfs.extend(df)
+            table_dfs = evaluate_cells(table_dfs)
 
             if 'table_names' not in st.session_state:
                 st.session_state.table_names = table_names
