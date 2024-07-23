@@ -213,7 +213,7 @@ if "initialised" not in st.session_state:
 # Initial Display
 st.set_page_config("Doctors Without Borders Data Entry")
 # st.title("Doctors Without Borders Image Recognition Data Entry")
-st.markdown("<h1 style='text-align: center; color: white;'>Doctors Without Borders Image Recognition Data Entry</h1>", unsafe_allow_html=True)
+st.markdown("<h1 style='text-align: center;'>Doctors Without Borders Image Recognition Data Entry</h1>", unsafe_allow_html=True)
 
 # Hardcoded Periods, probably won't update but can get them through API
 PERIOD_TYPES = {
