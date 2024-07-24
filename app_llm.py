@@ -8,7 +8,7 @@ import streamlit as st
 from simpleeval import simple_eval
 
 import msfocr.data.dhis2
-# import msfocr.docTR.ocr_functions
+import msfocr.docTR.ocr_functions
 import msfocr.llm.ocr_functions
 
 def configure_secrets():
@@ -166,7 +166,7 @@ def correct_field_names(dfs):
             text = table.iloc[row,0]
             if text is not None:
                 for name in dataElement_list:
-                    sim = msfocr.doctr.ocr_functions.letter_by_letter_similarity(text, name)
+                    sim = msfocr.docTR.ocr_functions.letter_by_letter_similarity(text, name)
                     if max_similarity_dataElement < sim:
                         max_similarity_dataElement = sim
                         dataElement = name
@@ -179,7 +179,7 @@ def correct_field_names(dfs):
             text = table.iloc[0,id]
             if text is not None:
                 for name in categoryOptionsList:
-                    sim =  msfocr.doctr.ocr_functions.letter_by_letter_similarity(text, name)
+                    sim =  msfocr.docTR.ocr_functions.letter_by_letter_similarity(text, name)
                     if max_similarity_catOpt < sim:
                         max_similarity_catOpt = sim
                         catOpt = name
@@ -380,7 +380,7 @@ if st.session_state['password_correct']:
             names, df = parse_table_data_wrapper(result)
             table_names.extend(names)
             table_dfs.extend(df)
-            page_nums.extend([i] * len(names))
+            page_nums.extend([i + 1] * len(names))
         
         table_dfs = evaluate_cells(table_dfs)
 
@@ -393,18 +393,18 @@ if st.session_state['password_correct']:
 
         # Displaying the editable information
         
-        page_options = {num + 1 for num in st.session_state.page_nums}
+        page_options = {num for num in st.session_state.page_nums}
         
         page_selected = st.selectbox("Page Number", page_options)
         
         # Displaying images so the user can see them
         with st.expander("Show Image"):
-            sheet = tally_sheet[page_selected - 1]
+            sheet = tally_sheet[int(str(page_selected).replace(" ✓", "")) - 1]
             image = msfocr.llm.ocr_functions.correct_image_orientation(sheet)
             st.image(image)
         
         for i, (table_name, df, page_num) in enumerate(zip(st.session_state.table_names, st.session_state.table_dfs, st.session_state.page_nums)):
-            if page_num != page_selected - 1:
+            if page_num != page_selected:
                 continue
             st.write(f"{table_name}")
             col1, col2 = st.columns([4, 1])
@@ -434,9 +434,15 @@ if st.session_state['password_correct']:
         # TODO: Currently there's only a small set of hard coded fields, which might look weird to the user, so it's left of for the demo
         #if st.button(f"Correct field names", key=f"correct_names"):
         #     table_dfs = correct_field_names(table_dfs)
-        if st.button("Save changes", type="primary"):    
-            # Rerun the code to display any edits made by user
+        # if st.button("Save changes", type="primary"):    
+        #     # Rerun the code to display any edits made by user
+        #     save_st_table(table_dfs)
+            
+        if st.button("Confirm data", type="primary"):
+            st.session_state.page_nums = [str(num) + " ✓" if num == page_selected else num for num in st.session_state.page_nums]
             save_st_table(table_dfs)
+            st.rerun()
+            # print(st.session_state.page_nums)
         
         if 'data_payload' not in st.session_state:
             st.session_state.data_payload = None
@@ -444,42 +450,45 @@ if st.session_state['password_correct']:
         # Generate and display key-value pairs
         if st.button("Upload to DHIS2", type="primary"):
             if data_set_selected_id:
-                try: 
-                    with st.spinner("Uploading in progress, please wait..."):
-                        final_dfs = copy.deepcopy(st.session_state.table_dfs)
-                        for id, table in enumerate(final_dfs):
-                            final_dfs[id] = set_first_row_as_header(table)
-                        print(final_dfs)
-    
-                        key_value_pairs = []
-                        for df in final_dfs:
-                            key_value_pairs.extend(msfocr.doctr.ocr_functions.generate_key_value_pairs(df, data_set_selected_id))
-                        
-                    st.session_state.data_payload = json_export(key_value_pairs)
-                    if st.session_state.data_payload is not None:
-                        data_value_set_url = f'{msfocr.data.dhis2.DHIS2_SERVER_URL}/api/dataValueSets?dryRun=true'
-                        # Send the POST request with the data payload
-                        response = requests.post(
-                            data_value_set_url,
-                            auth=(msfocr.data.dhis2.DHIS2_USERNAME, msfocr.data.dhis2.DHIS2_PASSWORD),
-                            headers={'Content-Type': 'application/json'},
-                            data=st.session_state.data_payload
-                        )
+                if all("✓" in str(num) for num in st.session_state.page_nums):
+                    try: 
+                        with st.spinner("Uploading in progress, please wait..."):
+                            final_dfs = copy.deepcopy(st.session_state.table_dfs)
+                            for id, table in enumerate(final_dfs):
+                                final_dfs[id] = set_first_row_as_header(table)
+                            print(final_dfs)
+        
+                            key_value_pairs = []
+                            for df in final_dfs:
+                                key_value_pairs.extend(msfocr.docTR.ocr_functions.generate_key_value_pairs(df, data_set_selected_id))
+                            
+                        st.session_state.data_payload = json_export(key_value_pairs)
+                        if st.session_state.data_payload is not None:
+                            data_value_set_url = f'{msfocr.data.dhis2.DHIS2_SERVER_URL}/api/dataValueSets?dryRun=true'
+                            # Send the POST request with the data payload
+                            response = requests.post(
+                                data_value_set_url,
+                                auth=(msfocr.data.dhis2.DHIS2_USERNAME, msfocr.data.dhis2.DHIS2_PASSWORD),
+                                headers={'Content-Type': 'application/json'},
+                                data=st.session_state.data_payload
+                            )
 
-                    # # Check the response status
-                    if response.status_code == 200:
-                        print('Response data:')
-                        print(response.json())
-                        st.success("Submitted!")
-                    else:
-                        print(f'Failed to enter data, status code: {response.status_code}')
-                        print('Response data:')
-                        print(response.json())
-                        st.error("Submission failed. Please try again or notify a technician.")
-                except KeyError:
-                        # TODO: When normalization actually works, we should change this. 
-                        st.success("Submitted!")
+                        # # Check the response status
+                        if response.status_code == 200:
+                            print('Response data:')
+                            print(response.json())
+                            st.success("Submitted!")
+                        else:
+                            print(f'Failed to enter data, status code: {response.status_code}')
+                            print('Response data:')
+                            print(response.json())
+                            st.error("Submission failed. Please try again or notify a technician.")
+                    except KeyError:
+                            # TODO: When normalization actually works, we should change this. 
+                            st.success("Submitted!")
 
+                else:
+                    st.error("Please confirm that all pages are correct.")
             else:
                 st.error("Please finish submitting organisation unit and data set.")
 
