@@ -10,7 +10,6 @@ import msfocr.data.dhis2
 import msfocr.doctr.ocr_functions
 import msfocr.llm.ocr_functions
 
-
 def configure_secrets():
     """Checks that necessary environment variables are set for fast failing.
     Configures the DHIS2 server connection.
@@ -199,6 +198,12 @@ def set_first_row_as_header(df):
     # print(df)
     return df
 
+def save_st_table(table_dfs):
+    for idx, table in enumerate(table_dfs):
+        if not table_dfs[idx].equals(st.session_state.table_dfs[idx]):
+            st.session_state.table_dfs = table_dfs
+            st.rerun()
+
 # Initiation
 if "initialised" not in st.session_state:
     st.session_state['initialised'] = True
@@ -208,7 +213,7 @@ if "initialised" not in st.session_state:
 # Initial Display
 st.set_page_config("Doctors Without Borders Data Entry")
 # st.title("Doctors Without Borders Image Recognition Data Entry")
-st.markdown("<h1 style='text-align: center; color: white;'>Doctors Without Borders Image Recognition Data Entry</h1>", unsafe_allow_html=True)
+st.markdown("<h1 style='text-align: center;'>Doctors Without Borders Image Recognition Data Entry</h1>", unsafe_allow_html=True)
 
 # Hardcoded Periods, probably won't update but can get them through API
 PERIOD_TYPES = {
@@ -380,25 +385,24 @@ if st.session_state['password_correct']:
                     # Add column functionality
                     # new_col_name = st.text_input(f"New column name", key=f"new_col_{i}")
                     if st.button(f"Add Column", key=f"add_col_{i}"):
-                        table_dfs[i][int(table_dfs[i].columns[-1]) + 1] = None
-
+                        table_dfs[i][str(int(table_dfs[i].columns[-1]) + 1)] = None
+                        save_st_table(table_dfs)
+        
                     # Delete column functionality
                     if not st.session_state.table_dfs[i].empty:
                         col_to_delete = st.selectbox(f"Column to delete", st.session_state.table_dfs[i].columns,
                                                     key=f"del_col_{i}")
                         if st.button(f"Delete Column", key=f"delete_col_{i}"):
                             table_dfs[i] = table_dfs[i].drop(columns=[col_to_delete])
-            
+                            save_st_table(table_dfs)
+
             # This can normalize table headers to match DHIS2 using Levenstein distance or semantic search
             # TODO: Currently there's only a small set of hard coded fields, which might look weird to the user, so it's left of for the demo
             #if st.button(f"Correct field names", key=f"correct_names"):
             #     table_dfs = correct_field_names(table_dfs)
-                
-            # Rerun the code to display any edits made by user
-            for idx, table in enumerate(table_dfs):
-                if not table_dfs[idx].equals(st.session_state.table_dfs[idx]):
-                    st.session_state.table_dfs = table_dfs
-                    st.rerun()
+            if st.button("Save changes", type="primary"):    
+                # Rerun the code to display any edits made by user
+                save_st_table(table_dfs)
             
             if 'data_payload' not in st.session_state:
                 st.session_state.data_payload = None
