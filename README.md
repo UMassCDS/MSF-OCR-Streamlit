@@ -1,6 +1,14 @@
 # MSF-OCR-Streamlit
 
-Uses a Streamlit web app in conjunction with an Optical Character Recognition (OCR) library to allow for uploading documents, scanning them, and correcting information.
+Uses a [Streamlit](https://streamlit.io/) web application in conjunction with an Optical Character Recognition (OCR) library to automate the manual data entry from forms with tabular information into DHIS2 (an open-source health information management system).
+ 
+### Features
+- You can upload images with tabular informtion
+- AI will recognize and display all the tablular information within the image in editable tables
+- You can verify the information and correct any incorrect information
+- Input information to identify the form 
+- One click upload data into DHIS2
+
 
 This repository contains two version of the application:
 - `app_llm.py` uses [OpenAI's GPT 4o model](https://platform.openai.com/docs/guides/vision) as an OCR engine to 'read' the tables from images
