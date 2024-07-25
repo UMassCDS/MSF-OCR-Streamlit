@@ -8,8 +8,10 @@ import streamlit as st
 from simpleeval import simple_eval
 
 import msfocr.data.dhis2
-import msfocr.docTR.ocr_functions
+import msfocr.doctr.ocr_functions
 import msfocr.llm.ocr_functions
+
+PAGE_REVIEWED_INDICATOR = "✓"
 
 def configure_secrets():
     """Checks that necessary environment variables are set for fast failing.
@@ -166,7 +168,7 @@ def correct_field_names(dfs):
             text = table.iloc[row,0]
             if text is not None:
                 for name in dataElement_list:
-                    sim = msfocr.docTR.ocr_functions.letter_by_letter_similarity(text, name)
+                    sim = msfocr.doctr.ocr_functions.letter_by_letter_similarity(text, name)
                     if max_similarity_dataElement < sim:
                         max_similarity_dataElement = sim
                         dataElement = name
@@ -179,7 +181,7 @@ def correct_field_names(dfs):
             text = table.iloc[0,id]
             if text is not None:
                 for name in categoryOptionsList:
-                    sim =  msfocr.docTR.ocr_functions.letter_by_letter_similarity(text, name)
+                    sim =  msfocr.doctr.ocr_functions.letter_by_letter_similarity(text, name)
                     if max_similarity_catOpt < sim:
                         max_similarity_catOpt = sim
                         catOpt = name
@@ -275,12 +277,12 @@ if st.session_state['password_correct']:
     holder = st.empty()
     
     holder.write("### File Upload ###")
-    tally_sheet = holder.file_uploader("Please upload one image of a tally sheet.", type=["png", "jpg", "jpeg"],
+    tally_sheet_images = holder.file_uploader("Please upload one image of a tally sheet.", type=["png", "jpg", "jpeg"],
                                 accept_multiple_files=True,
                                 key=st.session_state['upload_key'])
 
     # Once images are uploaded
-    if len(tally_sheet) > 0:
+    if len(tally_sheet_images) > 0:
         
         holder.empty()
 
@@ -295,7 +297,7 @@ if st.session_state['password_correct']:
             st.rerun()
 
         with st.spinner("Running image recognition..."):
-            results = get_results_wrapper(tally_sheet)
+            results = get_results_wrapper(tally_sheet_images)
 
         # ***************************************
         result = results[0]
@@ -375,12 +377,12 @@ if st.session_state['password_correct']:
 
 
         # Populate streamlit with data recognized from tally sheets
-        table_names, table_dfs, page_nums = [], [], []
+        table_names, table_dfs, page_nums_to_display = [], [], []
         for i, result in enumerate(results):
             names, df = parse_table_data_wrapper(result)
             table_names.extend(names)
             table_dfs.extend(df)
-            page_nums.extend([i + 1] * len(names))
+            page_nums_to_display.extend([str(i + 1)] * len(names))
         
         table_dfs = evaluate_cells(table_dfs)
 
@@ -389,7 +391,7 @@ if st.session_state['password_correct']:
         if 'table_dfs' not in st.session_state:
             st.session_state.table_dfs = table_dfs
         if 'page_nums' not in st.session_state:
-            st.session_state.page_nums = page_nums
+            st.session_state.page_nums = page_nums_to_display
 
         # Displaying the editable information
         
@@ -399,7 +401,7 @@ if st.session_state['password_correct']:
         
         # Displaying images so the user can see them
         with st.expander("Show Image"):
-            sheet = tally_sheet[int(str(page_selected).replace(" ✓", "")) - 1]
+            sheet = tally_sheet_images[int(page_selected.replace(PAGE_REVIEWED_INDICATOR, "").strip()) - 1]
             image = msfocr.llm.ocr_functions.correct_image_orientation(sheet)
             st.image(image)
         
@@ -438,8 +440,10 @@ if st.session_state['password_correct']:
         #     # Rerun the code to display any edits made by user
         #     save_st_table(table_dfs)
             
-        if st.button("Confirm data", type="primary"):
-            st.session_state.page_nums = [str(num) + " ✓" if num == page_selected else num for num in st.session_state.page_nums]
+        if st.button("Confirm data", type="primary"):            
+            st.session_state.page_nums = [f"{num} {PAGE_REVIEWED_INDICATOR}" if (num == page_selected and not num.endswith(PAGE_REVIEWED_INDICATOR)) 
+                                          else num 
+                                          for num in st.session_state.page_nums]
             save_st_table(table_dfs)
             st.rerun()
             # print(st.session_state.page_nums)
@@ -450,7 +454,7 @@ if st.session_state['password_correct']:
         # Generate and display key-value pairs
         if st.button("Upload to DHIS2", type="primary"):
             if data_set_selected_id:
-                if all("✓" in str(num) for num in st.session_state.page_nums):
+                if all(PAGE_REVIEWED_INDICATOR in str(num) for num in st.session_state.page_nums):
                     try: 
                         with st.spinner("Uploading in progress, please wait..."):
                             final_dfs = copy.deepcopy(st.session_state.table_dfs)
@@ -460,7 +464,7 @@ if st.session_state['password_correct']:
         
                             key_value_pairs = []
                             for df in final_dfs:
-                                key_value_pairs.extend(msfocr.docTR.ocr_functions.generate_key_value_pairs(df, data_set_selected_id))
+                                key_value_pairs.extend(msfocr.doctr.ocr_functions.generate_key_value_pairs(df, data_set_selected_id))
                             
                         st.session_state.data_payload = json_export(key_value_pairs)
                         if st.session_state.data_payload is not None:
