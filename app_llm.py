@@ -5,10 +5,13 @@ import os
 
 import requests
 import streamlit as st
+from simpleeval import simple_eval
 
 import msfocr.data.dhis2
 import msfocr.doctr.ocr_functions
 import msfocr.llm.ocr_functions
+
+PAGE_REVIEWED_INDICATOR = "✓"
 
 def configure_secrets():
     """Checks that necessary environment variables are set for fast failing.
@@ -203,6 +206,21 @@ def save_st_table(table_dfs):
         if not table_dfs[idx].equals(st.session_state.table_dfs[idx]):
             st.session_state.table_dfs = table_dfs
             st.rerun()
+            
+def evaluate_cells(table_dfs):
+    for table in table_dfs:
+        table_removed_labels = table.loc[1:, 1:]
+        for col in table_removed_labels.columns:
+            try:
+                table_removed_labels[col] = table_removed_labels[col].apply(lambda x: simple_eval(x) if x and x != "-" else x)
+            except:
+                continue
+        table.update(table_removed_labels)
+    return table_dfs
+
+@st.cache_data
+def parse_table_data_wrapper(result):
+    return msfocr.llm.ocr_functions.parse_table_data(result)
 
 # Initiation
 if "initialised" not in st.session_state:
@@ -259,20 +277,14 @@ if st.session_state['password_correct']:
     holder = st.empty()
     
     holder.write("### File Upload ###")
-    tally_sheet = holder.file_uploader("Please upload one image of a tally sheet.", type=["png", "jpg", "jpeg"],
+    tally_sheet_images = holder.file_uploader("Please upload one image of a tally sheet.", type=["png", "jpg", "jpeg"],
                                 accept_multiple_files=True,
                                 key=st.session_state['upload_key'])
 
     # Once images are uploaded
-    if len(tally_sheet) > 0:
+    if len(tally_sheet_images) > 0:
         
         holder.empty()
-        
-        # Displaying images so the user can see them
-        with st.expander("Show Images"):
-            for sheet in tally_sheet:
-                image = msfocr.llm.ocr_functions.correct_image_orientation(sheet)
-                st.image(image)
 
         if st.button("Clear Form", type='primary') and 'upload_key' in st.session_state.keys():
             st.session_state.upload_key += 1
@@ -280,13 +292,17 @@ if st.session_state['password_correct']:
                 del st.session_state['table_dfs']
             if 'table_names' in st.session_state:
                 del st.session_state['table_names']
+            if 'page_nums' in st.session_state:
+                del st.session_state['page_nums']
             st.rerun()
 
         with st.spinner("Running image recognition..."):
-            results = get_results_wrapper(tally_sheet)
+            results = get_results_wrapper(tally_sheet_images)
 
         # ***************************************
         result = results[0]
+        
+        # print(results)
 
         # Initialize from JSON result
         # dataSet = result.get('dataSet', None)
@@ -361,55 +377,84 @@ if st.session_state['password_correct']:
 
 
         # Populate streamlit with data recognized from tally sheets
-        table_names, table_dfs = [], []
-        for result in results:
-            names, df = msfocr.llm.ocr_functions.parse_table_data(result)
+        table_names, table_dfs, page_nums_to_display = [], [], []
+        for i, result in enumerate(results):
+            names, df = parse_table_data_wrapper(result)
             table_names.extend(names)
             table_dfs.extend(df)
-
-            if 'table_names' not in st.session_state:
-                st.session_state.table_names = table_names
-            if 'table_dfs' not in st.session_state:
-                st.session_state.table_dfs = table_dfs
-
-            # Displaying the editable information
-            for i, (table_name, df) in enumerate(zip(st.session_state.table_names, st.session_state.table_dfs)):
-                st.write(f"{table_name}")
-                col1, col2 = st.columns([4, 1])
-
-                with col1:
-                    # Display tables as editable fields
-                    table_dfs[i] = st.data_editor(df, num_rows="dynamic", key=f"editor_{i}", use_container_width=True)
-
-                with col2:
-                    # Add column functionality
-                    # new_col_name = st.text_input(f"New column name", key=f"new_col_{i}")
-                    if st.button(f"Add Column", key=f"add_col_{i}"):
-                        table_dfs[i][str(int(table_dfs[i].columns[-1]) + 1)] = None
-                        save_st_table(table_dfs)
+            page_nums_to_display.extend([str(i + 1)] * len(names))
         
-                    # Delete column functionality
-                    if not st.session_state.table_dfs[i].empty:
-                        col_to_delete = st.selectbox(f"Column to delete", st.session_state.table_dfs[i].columns,
-                                                    key=f"del_col_{i}")
-                        if st.button(f"Delete Column", key=f"delete_col_{i}"):
-                            table_dfs[i] = table_dfs[i].drop(columns=[col_to_delete])
-                            save_st_table(table_dfs)
+        table_dfs = evaluate_cells(table_dfs)
 
-            # This can normalize table headers to match DHIS2 using Levenstein distance or semantic search
-            # TODO: Currently there's only a small set of hard coded fields, which might look weird to the user, so it's left of for the demo
-            #if st.button(f"Correct field names", key=f"correct_names"):
-            #     table_dfs = correct_field_names(table_dfs)
-            if st.button("Save changes", type="primary"):    
-                # Rerun the code to display any edits made by user
-                save_st_table(table_dfs)
-            
-            if 'data_payload' not in st.session_state:
-                st.session_state.data_payload = None
+        if 'table_names' not in st.session_state:
+            st.session_state.table_names = table_names
+        if 'table_dfs' not in st.session_state:
+            st.session_state.table_dfs = table_dfs
+        if 'page_nums' not in st.session_state:
+            st.session_state.page_nums = page_nums_to_display
+
+        # Displaying the editable information
+        
+        page_options = {num for num in st.session_state.page_nums}
+        
+        page_selected = st.selectbox("Page Number", page_options)
+        
+        # Displaying images so the user can see them
+        with st.expander("Show Image"):
+            sheet = tally_sheet_images[int(page_selected.replace(PAGE_REVIEWED_INDICATOR, "").strip()) - 1]
+            image = msfocr.llm.ocr_functions.correct_image_orientation(sheet)
+            st.image(image)
+        
+        for i, (table_name, df, page_num) in enumerate(zip(st.session_state.table_names, st.session_state.table_dfs, st.session_state.page_nums)):
+            if page_num != page_selected:
+                continue
+            st.write(f"{table_name}")
+            col1, col2 = st.columns([4, 1])
+
+            with col1:
+                # Display tables as editable fields
+                # print("Table_dfs:")
+                # print(table_dfs)
+                table_dfs[i] = st.data_editor(df, num_rows="dynamic", key=f"editor_{i}", use_container_width=True)
+
+            with col2:
+                # Add column functionality
+                # new_col_name = st.text_input(f"New column name", key=f"new_col_{i}")
+                if st.button(f"Add Column", key=f"add_col_{i}"):
+                    table_dfs[i][str(int(table_dfs[i].columns[-1]) + 1)] = None
+                    save_st_table(table_dfs)
     
-            # Generate and display key-value pairs
-            if st.button("Upload to DHIS2", type="primary"):
-                if data_set_selected_id:
+                # Delete column functionality
+                if not st.session_state.table_dfs[i].empty:
+                    col_to_delete = st.selectbox(f"Column to delete", st.session_state.table_dfs[i].columns,
+                                                key=f"del_col_{i}")
+                    if st.button(f"Delete Column", key=f"delete_col_{i}"):
+                        table_dfs[i] = table_dfs[i].drop(columns=[col_to_delete])
+                        save_st_table(table_dfs)
+
+        # This can normalize table headers to match DHIS2 using Levenstein distance or semantic search
+        # TODO: Currently there's only a small set of hard coded fields, which might look weird to the user, so it's left of for the demo
+        #if st.button(f"Correct field names", key=f"correct_names"):
+        #     table_dfs = correct_field_names(table_dfs)
+        # if st.button("Save changes", type="primary"):    
+        #     # Rerun the code to display any edits made by user
+        #     save_st_table(table_dfs)
+            
+        if st.button("Confirm data", type="primary"):            
+            st.session_state.page_nums = [f"{num} {PAGE_REVIEWED_INDICATOR}" if (num == page_selected and not num.endswith(PAGE_REVIEWED_INDICATOR)) 
+                                          else num 
+                                          for num in st.session_state.page_nums]
+            save_st_table(table_dfs)
+            st.rerun()
+            # print(st.session_state.page_nums)
+        
+        if 'data_payload' not in st.session_state:
+            st.session_state.data_payload = None
+
+        # Generate and display key-value pairs
+        if st.button("Upload to DHIS2", type="primary"):
+            if data_set_selected_id:
+                if all(PAGE_REVIEWED_INDICATOR in str(num) for num in st.session_state.page_nums):
                     try: 
                         with st.spinner("Uploading in progress, please wait..."):
                             final_dfs = copy.deepcopy(st.session_state.table_dfs)
@@ -447,5 +492,7 @@ if st.session_state['password_correct']:
                             st.success("Submitted!")
 
                 else:
-                    st.error("Please finish submitting organisation unit and data set.")
+                    st.error("Please confirm that all pages are correct.")
+            else:
+                st.error("Please finish submitting organisation unit and data set.")
 
