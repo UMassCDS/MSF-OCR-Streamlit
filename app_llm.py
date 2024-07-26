@@ -494,5 +494,5 @@ if st.session_state['password_correct']:
                 else:
                     st.error("Please confirm that all pages are correct.")
             else:
-                st.error("Please finish submitting organisation unit and data set.")
+                st.error("Please finish selecting organisation unit and data set.")
 
