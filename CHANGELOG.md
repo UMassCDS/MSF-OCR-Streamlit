@@ -8,6 +8,19 @@ You should also add project tags for each release in Github, see [Managing relea
 
 ## [Unreleased]
 
+## [1.1.0] - 2024-07-26
+### Added 
+- More than one image can be uploaded and processed at a time
+- User must verify that all images are correct before uploading
+- Mathematical expressions that appear in cells are evaluated before displaying results to the user
+
+### Changed
+- Title color is responsive to theme
+
+### Fixed
+- Fix problem where sometimes table cells weren't editable in the Streamlit app
+
+
 ## [1.0.0] - 2024-07-19
 ### Added
 - app_llm.py OCR backed by OpenAI GPT vision model
