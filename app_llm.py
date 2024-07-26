@@ -216,7 +216,8 @@ def evaluate_cells(table_dfs):
         table_removed_labels = table.loc[1:, 1:]
         for col in table_removed_labels.columns:
             try:
-                table_removed_labels[col] = table_removed_labels[col].apply(lambda x: simple_eval(x) if x and x != "-" else x)
+                # Contents should be strings in order to be editable later
+                table_removed_labels[col] = table_removed_labels[col].apply(lambda x: simple_eval(x) if x and x != "-" else x).astype("str")
             except:
                 continue
         table.update(table_removed_labels)
@@ -224,7 +225,8 @@ def evaluate_cells(table_dfs):
 
 @st.cache_data
 def parse_table_data_wrapper(result):
-    return msfocr.llm.ocr_functions.parse_table_data(result)
+    tablenames, tables =  msfocr.llm.ocr_functions.parse_table_data(result)
+    return tablenames, tables
 
 # Initiation
 if "initialised" not in st.session_state:
@@ -415,8 +417,6 @@ if st.session_state['password_correct']:
 
             with col1:
                 # Display tables as editable fields
-                # print("Table_dfs:")
-                # print(table_dfs)
                 table_dfs[i] = st.data_editor(df, num_rows="dynamic", key=f"editor_{i}", use_container_width=True)
 
             with col2:
@@ -434,75 +434,75 @@ if st.session_state['password_correct']:
                         table_dfs[i] = table_dfs[i].drop(columns=[col_to_delete])
                         save_st_table(table_dfs)
 
-            if st.button("Confirm data", type="primary"):            
-                st.session_state.page_nums = [f"{num} {PAGE_REVIEWED_INDICATOR}" if (num == page_selected and not num.endswith(PAGE_REVIEWED_INDICATOR)) 
-                                            else num 
-                                            for num in st.session_state.page_nums]
-                save_st_table(table_dfs)
-                st.rerun()
-        
+        if st.button("Confirm data", type="primary"):            
+            st.session_state.page_nums = [f"{num} {PAGE_REVIEWED_INDICATOR}" if (num == page_selected and not num.endswith(PAGE_REVIEWED_INDICATOR)) 
+                                        else num 
+                                        for num in st.session_state.page_nums]
+            save_st_table(table_dfs)
+            st.rerun()
+    
 
-            if org_unit_child_id is not None and data_set_selected_id is not None:
-                if period_type:
-                    period_ID = get_period()
-                # Get the information about the DHIS2 form after all form identifiers have been selected by the user    
-                form = getFormJson_wrapper(data_set_selected_id, period_ID, org_unit_child_id)
+        if org_unit_child_id is not None and data_set_selected_id is not None:
+            if period_type:
+                period_ID = get_period()
+            # Get the information about the DHIS2 form after all form identifiers have been selected by the user    
+            form = getFormJson_wrapper(data_set_selected_id, period_ID, org_unit_child_id)
 
-                # This can normalize table headers to match DHIS2 using Levenstein distance or semantic search
-                if st.button(f"Correct field names", key=f"correct_names", type="primary"):    
-                    if data_set_selected_id:
-                        print("Running", data_set_selected_id)
-                        table_dfs = correct_field_names(table_dfs, form)
-                        save_st_table(table_dfs)
-                    else:
-                        raise Exception("Select a valid dataset")    
-                if 'data_payload' not in st.session_state:
-                    st.session_state.data_payload = None
-        
-                # Generate and display key-value pairs
-                if st.button("Generate key value pairs", type="primary"):
-                    try:
-                        with st.spinner("Key value pair generation in progress, please wait..."):
-                            final_dfs = copy.deepcopy(st.session_state.table_dfs)
-                            for id, table in enumerate(final_dfs):
-                                final_dfs[id] = set_first_row_as_header(table)
-                            print(final_dfs)
-
-                            key_value_pairs = []
-                            for df in final_dfs:
-                                key_value_pairs.extend(msfocr.doctr.ocr_functions.generate_key_value_pairs(df, form))
-                            
-                            st.session_state.data_payload = json_export(key_value_pairs)
-
-                            st.write("### Data payload ###")
-                            st.json(st.session_state.data_payload)
-                    except KeyError as e:
-                        raise Exception("Key error - ", e)
-
-                if st.button("Upload to DHIS2", type="primary"):
-                    if all(PAGE_REVIEWED_INDICATOR in str(num) for num in st.session_state.page_nums):
-                        if st.session_state.data_payload is not None:
-                            data_value_set_url = f'{msfocr.data.dhis2.DHIS2_SERVER_URL}/api/dataValueSets?dryRun=true'
-                            # Send the POST request with the data payload
-                            response = requests.post(
-                                data_value_set_url,
-                                auth=(msfocr.data.dhis2.DHIS2_USERNAME, msfocr.data.dhis2.DHIS2_PASSWORD),
-                                headers={'Content-Type': 'application/json'},
-                                data=st.session_state.data_payload
-                            )
-                        else:
-                            st.error("Generate key value pairs first")
-                        # Check the response status
-                        if response.status_code == 200:
-                            print('Response data:')
-                            print(response.json())
-                            st.success("Submitted!")
-                        else:
-                            print(f'Failed to enter data, status code: {response.status_code}')
-                            print('Response data:')
-                            print(response.json())
-                            st.error("Submission failed. Please try again or notify a technician.")
-
+            # This can normalize table headers to match DHIS2 using Levenstein distance or semantic search
+            if st.button(f"Correct field names", key=f"correct_names", type="primary"):    
+                if data_set_selected_id:
+                    print("Running", data_set_selected_id)
+                    table_dfs = correct_field_names(table_dfs, form)
+                    save_st_table(table_dfs)
                 else:
-                    st.error("Please finish submitting organisation unit and data set.")
+                    raise Exception("Select a valid dataset")    
+            if 'data_payload' not in st.session_state:
+                st.session_state.data_payload = None
+    
+            # Generate and display key-value pairs
+            if st.button("Generate key value pairs", type="primary"):
+                try:
+                    with st.spinner("Key value pair generation in progress, please wait..."):
+                        final_dfs = copy.deepcopy(st.session_state.table_dfs)
+                        for id, table in enumerate(final_dfs):
+                            final_dfs[id] = set_first_row_as_header(table)
+                        print(final_dfs)
+
+                        key_value_pairs = []
+                        for df in final_dfs:
+                            key_value_pairs.extend(msfocr.doctr.ocr_functions.generate_key_value_pairs(df, form))
+                        
+                        st.session_state.data_payload = json_export(key_value_pairs)
+
+                        st.write("### Data payload ###")
+                        st.json(st.session_state.data_payload)
+                except KeyError as e:
+                    raise Exception("Key error - ", e)
+
+            if st.button("Upload to DHIS2", type="primary"):
+                if all(PAGE_REVIEWED_INDICATOR in str(num) for num in st.session_state.page_nums):
+                    if st.session_state.data_payload is not None:
+                        data_value_set_url = f'{msfocr.data.dhis2.DHIS2_SERVER_URL}/api/dataValueSets?dryRun=true'
+                        # Send the POST request with the data payload
+                        response = requests.post(
+                            data_value_set_url,
+                            auth=(msfocr.data.dhis2.DHIS2_USERNAME, msfocr.data.dhis2.DHIS2_PASSWORD),
+                            headers={'Content-Type': 'application/json'},
+                            data=st.session_state.data_payload
+                        )
+                    else:
+                        st.error("Generate key value pairs first")
+                    # Check the response status
+                    if response.status_code == 200:
+                        print('Response data:')
+                        print(response.json())
+                        st.success("Submitted!")
+                    else:
+                        print(f'Failed to enter data, status code: {response.status_code}')
+                        print('Response data:')
+                        print(response.json())
+                        st.error("Submission failed. Please try again or notify a technician.")
+
+            else:
+                st.error("Please finish submitting organisation unit and data set.")
 
