@@ -212,7 +212,7 @@ def evaluate_cells(table_dfs):
         table_removed_labels = table.loc[1:, 1:]
         for col in table_removed_labels.columns:
             try:
-                table_removed_labels[col] = table_removed_labels[col].apply(lambda x: simple_eval(x) if x and x != "-" else x)
+                table_removed_labels[col] = table_removed_labels[col].apply(lambda x: simple_eval(x) if x and x != "-" else x).astype("str")
             except:
                 continue
         table.update(table_removed_labels)
@@ -277,7 +277,7 @@ if st.session_state['password_correct']:
     holder = st.empty()
     
     holder.write("### File Upload ###")
-    tally_sheet_images = holder.file_uploader("Please upload one image of a tally sheet.", type=["png", "jpg", "jpeg"],
+    tally_sheet_images = holder.file_uploader("Please upload tally sheet images.", type=["png", "jpg", "jpeg"],
                                 accept_multiple_files=True,
                                 key=st.session_state['upload_key'])
 
