@@ -281,7 +281,7 @@ if st.session_state['password_correct']:
     holder = st.empty()
     
     holder.write("### File Upload ###")
-    tally_sheet_images = holder.file_uploader("Please upload one image of a tally sheet.", type=["png", "jpg", "jpeg"],
+    tally_sheet_images = holder.file_uploader("Please upload tally sheet images.", type=["png", "jpg", "jpeg"],
                                 accept_multiple_files=True,
                                 key=st.session_state['upload_key'])
 
