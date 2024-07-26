@@ -502,7 +502,9 @@ if st.session_state['password_correct']:
                         print('Response data:')
                         print(response.json())
                         st.error("Submission failed. Please try again or notify a technician.")
+                else: 
+                    st.error("Please confirm that all pages are correct.")
 
-            else:
-                st.error("Please finish submitting organisation unit and data set.")
+        else:
+            st.error("Please finish selecting organisation unit and data set.")
 
