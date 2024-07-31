@@ -205,12 +205,12 @@ def set_first_row_as_header(df):
     # print(df)
     return df
 
-def save_st_table(table_dfs):
-    for idx, table in enumerate(table_dfs):
-        if not table_dfs[idx].equals(st.session_state.table_dfs[idx]):
-            st.session_state.table_dfs = table_dfs
-            st.rerun()
-            
+def save_st_table(dfs):
+    for idx, table in enumerate(dfs):
+        if not dfs[idx].equals(st.session_state.table_dfs[idx]):
+            st.session_state.table_dfs[idx] = dfs[idx]
+    st.rerun() 
+
 def evaluate_cells(table_dfs):
     for table in table_dfs:
         table_removed_labels = table.loc[1:, 1:]
@@ -381,12 +381,14 @@ if st.session_state['password_correct']:
 
         
         # Populate streamlit with data recognized from tally sheets
+        
         table_names, table_dfs, page_nums_to_display = [], [], []
         for i, result in enumerate(results):
             names, df = parse_table_data_wrapper(result)
             table_names.extend(names)
             table_dfs.extend(df)
             page_nums_to_display.extend([str(i + 1)] * len(names))
+
         
         table_dfs = evaluate_cells(table_dfs)
 
@@ -397,11 +399,13 @@ if st.session_state['password_correct']:
         if 'page_nums' not in st.session_state:
             st.session_state.page_nums = page_nums_to_display
 
+        
         # Displaying the editable information
+        page_options = sorted({num for num in st.session_state.page_nums}, key=lambda k: int(k.replace(PAGE_REVIEWED_INDICATOR, "")))
         
-        page_options = {num for num in st.session_state.page_nums}
+        current_page = next((i for i, num in enumerate(page_options) if not num.endswith(PAGE_REVIEWED_INDICATOR)), 0)
         
-        page_selected = st.selectbox("Page Number", page_options)
+        page_selected = st.selectbox("Page Number", page_options, index=int(current_page))
         
         # Displaying images so the user can see them
         with st.expander("Show Image"):
@@ -415,30 +419,31 @@ if st.session_state['password_correct']:
             st.write(f"{table_name}")
             col1, col2 = st.columns([4, 1])
 
+            edited_dfs = st.session_state.table_dfs
             with col1:
                 # Display tables as editable fields
-                table_dfs[i] = st.data_editor(df, num_rows="dynamic", key=f"editor_{i}", use_container_width=True)
+                edited_dfs[i] = st.data_editor(df, num_rows="dynamic", key=f"editor_{i}", use_container_width=True)
 
             with col2:
                 # Add column functionality
                 # new_col_name = st.text_input(f"New column name", key=f"new_col_{i}")
                 if st.button(f"Add Column", key=f"add_col_{i}"):
-                    table_dfs[i][str(int(table_dfs[i].columns[-1]) + 1)] = None
-                    save_st_table(table_dfs)
+                    edited_dfs[i][str(int(table_dfs[i].columns[-1]) + 1)] = None
+                    save_st_table(edited_dfs)
     
                 # Delete column functionality
                 if not st.session_state.table_dfs[i].empty:
                     col_to_delete = st.selectbox(f"Column to delete", st.session_state.table_dfs[i].columns,
                                                 key=f"del_col_{i}")
                     if st.button(f"Delete Column", key=f"delete_col_{i}"):
-                        table_dfs[i] = table_dfs[i].drop(columns=[col_to_delete])
-                        save_st_table(table_dfs)
+                        edited_dfs[i] = table_dfs[i].drop(columns=[col_to_delete])
+                        save_st_table(edited_dfs)
 
         if st.button("Confirm data", type="primary"):            
             st.session_state.page_nums = [f"{num} {PAGE_REVIEWED_INDICATOR}" if (num == page_selected and not num.endswith(PAGE_REVIEWED_INDICATOR)) 
                                         else num 
                                         for num in st.session_state.page_nums]
-            save_st_table(table_dfs)
+            save_st_table(edited_dfs)
             st.rerun()
     
 
@@ -452,8 +457,8 @@ if st.session_state['password_correct']:
             if st.button(f"Correct field names", key=f"correct_names", type="primary"):    
                 if data_set_selected_id:
                     print("Running", data_set_selected_id)
-                    table_dfs = correct_field_names(table_dfs, form)
-                    save_st_table(table_dfs)
+                    edited_dfs = correct_field_names(st.session_state.table_dfs, form)
+                    save_st_table(edited_dfs)
                 else:
                     raise Exception("Select a valid dataset")    
             if 'data_payload' not in st.session_state:
