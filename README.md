@@ -1,3 +1,6 @@
+> [!IMPORTANT]  
+> This code has been integrated into the sister repository, https://github.com/UMassCDS/ds4cg-DoctorsWithoutBorders. All future changes should be done on that repository. This repository is now read-only.
+>
 # MSF-OCR-Streamlit
 
 Uses a Streamlit web app in conjunction with an Optical Character Recognition (OCR) library to allow for uploading documents, scanning them, and correcting information.
