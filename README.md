@@ -17,7 +17,12 @@ DHIS2_PASSWORD=<your password>
 DHIS2_SERVER_URL=<server url>
 ```
 
-If you are using the `app_llm.py` version of the application, you will also need to set `OPENAI_API_KEY` with an API key obtained from [OpenAI's online portal](https://platform.openai.com/).
+
+If you are using the app_llm.py version of the application, you will need to set up API credentials. 
+
+For OpenAI, set `OPENAI_API_KEY` with an API key obtained from [OpenAI's online portal](https://platform.openai.com/).
+If you're using Azure OpenAI, you'll need to set `AZURE_OPENAI_API_KEY` and `AZURE_OPENAI_ENDPOINT`.
+
 
 ## Running Locally
 1) Set your environment variables. On a unix system the easiest way to do this is put them in a `.env` file, then run `set -a && source .env && set +a`. You can also set them in your System Properties or shell environment profile.  

@@ -20,8 +20,11 @@ def configure_secrets():
     username = os.environ["DHIS2_USERNAME"]
     password = os.environ["DHIS2_PASSWORD"]
     server_url = os.environ["DHIS2_SERVER_URL"]
-    open_ai = os.environ["OPENAI_API_KEY"]
     msfocr.data.dhis2.configure_DHIS2_server(username, password, server_url)
+
+    api_key = os.getenv("AZURE_OPENAI_API_KEY")
+    azure_endpoint = os.getenv("AZURE_OPENAI_ENDPOINT")
+    msfocr.llm.ocr_functions.configure_azure_openai(api_key, azure_endpoint)
 
 
 @st.cache_data
